@@ -1,0 +1,119 @@
+<!doctype html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self' nova: blob: data: mediastream:; img-src 'self' nova: blob: data:; media-src 'self' nova: blob: data: mediastream:; style-src 'self' 'unsafe-inline'; script-src 'self'">
+<title>NOVA Canlı</title>
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<header class="topbar">
+  <div class="brand"><img class="logo" src="img/icon.png" alt=""><b>NOVA</b><span>Canlı</span></div>
+  <nav class="menu">
+    <button data-act="new">Yeni</button>
+    <button data-act="open">Aç</button>
+    <button data-act="save">Kaydet</button>
+    <button data-act="settings">Ayarlar</button>
+    <button data-act="help">Kısayollar</button>
+    <button data-act="about">Hakkında</button>
+  </nav>
+  <div class="stats">
+    <span id="st-res">1080p30</span>
+    <span id="st-fps">0 fps</span>
+    <span id="st-render">0 ms</span>
+    <span id="st-clock" class="mono">00:00:00</span>
+  </div>
+  <div class="outs">
+    <button class="out-btn" data-act="snapshot" title="Program görüntüsünü PNG kaydet">FOTO</button>
+    <button class="out-btn" data-act="external" title="Programı ayrı pencerede aç (projeksiyon / 2. monitör)">ÇIKIŞ</button>
+    <button class="out-btn rec" id="btn-rec" data-act="record"><i></i><span>KAYIT</span><em class="mono" id="rec-time"></em></button>
+    <button class="out-btn live" id="btn-live" data-act="stream"><i></i><span>YAYIN</span><em class="mono" id="live-time"></em></button>
+  </div>
+</header>
+
+<section class="monitors">
+  <div class="monitor pvw">
+    <div class="mon-head"><b>ÖNİZLEME</b><span id="pvw-name">—</span></div>
+    <div class="screen"><canvas id="pvw-canvas"></canvas></div>
+  </div>
+
+  <div class="tpanel">
+    <div class="tp-row">
+      <button class="big" id="btn-cut" data-act="cut" title="Enter">KES</button>
+      <button class="big auto" id="btn-auto" data-act="auto" title="Boşluk">OTOMATİK</button>
+    </div>
+    <div class="tp-row">
+      <select id="tr-type">
+        <option value="fade">Geçiş (Fade)</option>
+        <option value="dip">Siyaha Geç</option>
+        <option value="dipw">Beyaza Geç</option>
+        <option value="wipe">Silme (Wipe)</option>
+        <option value="slide">Kaydır</option>
+        <option value="push">İt (Push)</option>
+        <option value="zoom">Yakınlaş</option>
+        <option value="circle">Daire</option>
+      </select>
+      <input id="tr-dur" type="number" min="100" max="5000" step="100" value="600" title="Süre (ms)">
+    </div>
+    <div class="tbar-wrap">
+      <span>T</span>
+      <input id="tbar" type="range" min="0" max="1000" value="0" orient="vertical">
+    </div>
+    <div class="tp-quick" id="quick"></div>
+    <div class="tp-row">
+      <button id="btn-ftb" data-act="ftb" title="B">FTB</button>
+    </div>
+    <div class="ovl-row" id="ovl-row"></div>
+  </div>
+
+  <div class="monitor pgm">
+    <div class="mon-head"><b>PROGRAM</b><span id="pgm-name">—</span><em id="onair">CANLI</em></div>
+    <div class="screen" id="pgm-screen"></div>
+  </div>
+</section>
+
+<section class="bottom">
+  <div class="inputs-wrap">
+    <div class="sec-head">
+      <b>KAYNAKLAR</b>
+      <div class="add-wrap">
+        <button class="primary" id="btn-add">+ Kaynak Ekle</button>
+        <div class="add-menu" id="add-menu">
+          <button data-add="camera">Kamera / Yakalama Kartı</button>
+          <button data-add="screen">Ekran / Pencere / Oyun</button>
+          <button data-add="video">Video / Oynatma Listesi</button>
+          <button data-add="image">Resim / Logo</button>
+          <button data-add="color">Renk / Arka Plan</button>
+          <button data-add="title">Grafik / Alt Yazı</button>
+          <button data-add="mic">Mikrofon / Ses Girişi</button>
+          <button data-add="audio">Ses / Müzik Dosyası</button>
+          <button data-add="replay">Anlık Tekrar (Yavaş Çekim)</button>
+        </div>
+      </div>
+      <span class="hint">Dosyaları sürükleyip bırakabilirsin • Tıkla: Önizleme • Çift tıkla: Ayarlar</span>
+    </div>
+    <div class="inputs" id="inputs"></div>
+  </div>
+  <div class="mixer-wrap">
+    <div class="sec-head"><b>SES MİKSERİ</b>
+      <label class="tog"><input type="checkbox" id="monitor-tog" checked> Kulaklık</label>
+    </div>
+    <div class="mixer" id="mixer"></div>
+  </div>
+</section>
+
+<footer class="statusbar">
+  <span id="sb-msg">Hazır.</span>
+  <span id="sb-stream"></span>
+  <span id="sb-rec"></span>
+  <span class="credit">NOVA Canlı v1.0 • Samet Şahin (@xsametsahinx)</span>
+</footer>
+
+<div class="modal-bg" id="modal-bg"><div class="modal" id="modal"></div></div>
+<div class="toast" id="toast"></div>
+
+<script src="js/chroma.js"></script>
+<script src="js/titles.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>

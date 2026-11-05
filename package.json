@@ -1,0 +1,64 @@
+{
+  "name": "nova-canli",
+  "productName": "NOVA Canlı",
+  "version": "1.1.0",
+  "description": "NOVA Canlı - vMix benzeri canlı yayın ve prodüksiyon programı",
+  "author": "Samet Şahin (@xsametsahinx)",
+  "license": "MIT",
+  "main": "src/main.js",
+  "scripts": {
+    "start": "electron .",
+    "dist": "electron-builder --win nsis --x64"
+  },
+  "devDependencies": {},
+  "dependencies": {},
+  "build": {
+    "appId": "com.xsametsahinx.novacanli",
+    "productName": "NOVA Canlı",
+    "copyright": "© Samet Şahin (@xsametsahinx)",
+    "directories": {
+      "output": "dist",
+      "buildResources": "build"
+    },
+    "files": [
+      "src/**/*",
+      "build/icon.png",
+      "package.json",
+      "!node_modules/ffmpeg-static/**"
+    ],
+    "extraResources": [
+      {
+        "from": "node_modules/ffmpeg-static/ffmpeg.exe",
+        "to": "ffmpeg/ffmpeg.exe"
+      }
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "build/icon.ico"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "NOVA Canlı",
+      "artifactName": "NOVA-Canli-Setup-${version}.${ext}",
+      "language": "1055",
+      "installerLanguages": [
+        "tr_TR"
+      ]
+    }
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/pepsicosamet-arch/NovaCanli.git"
+  }
+}

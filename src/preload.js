@@ -1,0 +1,23 @@
+const { contextBridge, ipcRenderer, webUtils } = require('electron');
+
+contextBridge.exposeInMainWorld('nova', {
+  isDesktop: true,
+  getSources: () => ipcRenderer.invoke('get-sources'),
+  getDisplays: () => ipcRenderer.invoke('get-displays'),
+  openFiles: (kind) => ipcRenderer.invoke('open-files', kind),
+  chooseFolder: () => ipcRenderer.invoke('choose-folder'),
+  defaultFolder: () => ipcRenderer.invoke('default-folder'),
+  openFolder: (dir) => ipcRenderer.invoke('open-folder', dir),
+  openUrl: (url) => ipcRenderer.invoke('open-url', url),
+  saveProject: (json, current) => ipcRenderer.invoke('save-project', json, current),
+  readFile: (file) => ipcRenderer.invoke('read-file', file),
+  saveSnapshot: (dir, dataUrl) => ipcRenderer.invoke('save-snapshot', dir, dataUrl),
+  loadSettings: () => ipcRenderer.invoke('settings-load'),
+  saveSettings: (obj) => ipcRenderer.invoke('settings-save', obj),
+  outputStart: (kind, cfg) => ipcRenderer.invoke('output-start', kind, cfg),
+  outputChunk: (kind, buf) => ipcRenderer.send('output-chunk', kind, buf),
+  outputStop: (kind) => ipcRenderer.invoke('output-stop', kind),
+  onOutputStats: (cb) => ipcRenderer.on('output-stats', (e, kind, s) => cb(kind, s)),
+  onOutputEnded: (cb) => ipcRenderer.on('output-ended', (e, kind, info) => cb(kind, info)),
+  pathForFile: (f) => { try { return webUtils.getPathForFile(f); } catch { return null; } }
+});

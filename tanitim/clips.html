@@ -1,0 +1,83 @@
+<!doctype html><html><head><meta charset="utf-8"><style>html,body{margin:0;background:#000;overflow:hidden}canvas{display:block}</style></head>
+<body><canvas id="c" width="1280" height="720"></canvas>
+<script>
+// Demo klipleri: 'drone' (manzara) ve 'synth' (neon oyun yolu)
+const c = document.getElementById('c'), x = c.getContext('2d'), W = 1280, H = 720;
+const mode = new URLSearchParams(location.search).get('m') || 'drone';
+function rnd(s) { return () => (s = (s * 16807) % 2147483647) / 2147483647; }
+const r = rnd(42);
+const stars = Array.from({ length: 160 }, () => [r() * W, r() * H * 0.55, r() * 1.6 + 0.3]);
+const clouds = Array.from({ length: 9 }, () => [r() * W * 1.6, 60 + r() * 170, 120 + r() * 220, 0.15 + r() * 0.35]);
+function ridge(seed, amp, base, t, speed, col) {
+  x.fillStyle = col; x.beginPath(); x.moveTo(0, H);
+  for (let i = 0; i <= W; i += 8) {
+    const u = (i + t * speed) / 180;
+    const y = base - amp * (Math.sin(u + seed) * 0.5 + Math.sin(u * 2.3 + seed * 2) * 0.3 + Math.sin(u * 5.1 + seed) * 0.12);
+    x.lineTo(i, y);
+  }
+  x.lineTo(W, H); x.fill();
+}
+window.render = function (t) {
+  if (mode === 'drone') {
+    const g = x.createLinearGradient(0, 0, 0, H);
+    g.addColorStop(0, '#1b2a6b'); g.addColorStop(0.45, '#e86a5c'); g.addColorStop(0.62, '#ffc48a'); g.addColorStop(1, '#ffd9a8');
+    x.fillStyle = g; x.fillRect(0, 0, W, H);
+    // güneş
+    const sy = 380 - t * 6;
+    const sg = x.createRadialGradient(W * 0.62, sy, 10, W * 0.62, sy, 260);
+    sg.addColorStop(0, 'rgba(255,240,200,1)'); sg.addColorStop(0.18, 'rgba(255,214,150,0.9)'); sg.addColorStop(1, 'rgba(255,180,120,0)');
+    x.fillStyle = sg; x.fillRect(0, 0, W, H);
+    clouds.forEach(([cx, cy, cw, a]) => {
+      const px = ((cx - t * 18 * (1 + a)) % (W * 1.6) + W * 1.6) % (W * 1.6) - W * 0.3;
+      x.fillStyle = `rgba(255,230,220,${a})`;
+      x.beginPath(); x.ellipse(px, cy, cw, cw * 0.18, 0, 0, Math.PI * 2); x.fill();
+    });
+    ridge(1, 90, 430, t, 25, '#7a4a7e');
+    ridge(3, 110, 500, t, 45, '#4b2f63');
+    ridge(5, 120, 580, t, 80, '#2a1d47');
+    // göl ve yansıma
+    x.fillStyle = '#1a1433'; x.fillRect(0, 640, W, 80);
+    for (let i = 0; i < 40; i++) { const yy = 645 + i * 2; x.fillStyle = `rgba(255,200,150,${0.25 - i * 0.006})`; x.fillRect(W * 0.62 - 120 + Math.sin(i + t * 3) * 10, yy, 240 - i * 4, 1); }
+    ridge(7, 60, 700, t, 160, '#120c22');
+  } else {
+    // synthwave neon yol (oyun görüntüsü havası)
+    const g = x.createLinearGradient(0, 0, 0, H * 0.55);
+    g.addColorStop(0, '#08021a'); g.addColorStop(1, '#3a0a4f');
+    x.fillStyle = g; x.fillRect(0, 0, W, H * 0.55);
+    stars.forEach(([sx, sy, s]) => { x.fillStyle = `rgba(255,255,255,${0.4 + 0.4 * Math.sin(t * 3 + sx)})`; x.fillRect(sx, sy, s, s); });
+    // güneş şeritli
+    const cx = W / 2, cy = H * 0.42, R = 170;
+    x.save(); x.beginPath(); x.arc(cx, cy, R, 0, Math.PI * 2); x.clip();
+    const sg = x.createLinearGradient(0, cy - R, 0, cy + R); sg.addColorStop(0, '#ffe14d'); sg.addColorStop(1, '#ff2d7a');
+    x.fillStyle = sg; x.fillRect(cx - R, cy - R, R * 2, R * 2);
+    x.fillStyle = '#3a0a4f';
+    for (let i = 0; i < 7; i++) { const yy = cy + 20 + i * 22 - ((t * 20) % 22); x.fillRect(cx - R, yy, R * 2, 4 + i * 1.6); }
+    x.restore();
+    // dağ silüeti
+    x.fillStyle = '#12051f'; x.beginPath(); x.moveTo(0, H * 0.55);
+    for (let i = 0; i <= W; i += 20) x.lineTo(i, H * 0.55 - Math.abs(Math.sin(i * 0.013) * 70 + Math.sin(i * 0.031) * 30));
+    x.lineTo(W, H * 0.55); x.fill();
+    // ızgara zemin
+    x.fillStyle = '#0a0214'; x.fillRect(0, H * 0.55, W, H);
+    x.strokeStyle = '#ff2dd4'; x.lineWidth = 2; x.shadowColor = '#ff2dd4'; x.shadowBlur = 12;
+    const hz = H * 0.55;
+    for (let i = -20; i <= 20; i++) { x.beginPath(); x.moveTo(W / 2 + i * 30, hz); x.lineTo(W / 2 + i * 260, H); x.stroke(); }
+    for (let k = 0; k < 14; k++) {
+      const z = ((k + (t * 1.6) % 1) / 14);
+      const yy = hz + Math.pow(z, 2.2) * (H - hz);
+      x.globalAlpha = Math.min(1, z * 3); x.beginPath(); x.moveTo(0, yy); x.lineTo(W, yy); x.stroke();
+    }
+    x.globalAlpha = 1; x.shadowBlur = 0;
+    // araç
+    const bx = W / 2 + Math.sin(t * 1.3) * 180, by = H - 120;
+    x.fillStyle = '#00e5ff'; x.shadowColor = '#00e5ff'; x.shadowBlur = 25;
+    x.beginPath(); x.moveTo(bx - 70, by + 40); x.lineTo(bx - 40, by - 10); x.lineTo(bx + 40, by - 10); x.lineTo(bx + 70, by + 40); x.closePath(); x.fill();
+    x.fillStyle = '#ff2d4b'; x.fillRect(bx - 60, by + 28, 26, 8); x.fillRect(bx + 34, by + 28, 26, 8);
+    x.shadowBlur = 0;
+    // HUD
+    x.fillStyle = '#fff'; x.font = '800 30px Segoe UI, Arial'; x.fillText(`${Math.floor(180 + Math.sin(t) * 40)} km/s`, W - 230, H - 40);
+    x.font = '700 22px Segoe UI, Arial'; x.fillText(`TUR 2/3   SIRA 1`, 40, 50);
+  }
+};
+render(0);
+</script></body></html>
