@@ -24,6 +24,7 @@
     <span id="st-clock" class="mono">00:00:00</span>
   </div>
   <div class="outs">
+    <button class="out-btn upd" id="btn-upd" data-act="update" hidden title="Güncelleme"><span>GÜNCELLEME</span></button>
     <button class="out-btn" data-act="snapshot" title="Program görüntüsünü PNG kaydet">FOTO</button>
     <button class="out-btn" data-act="external" title="Programı ayrı pencerede aç (projeksiyon / 2. monitör)">ÇIKIŞ</button>
     <button class="out-btn rec" id="btn-rec" data-act="record"><i></i><span>KAYIT</span><em class="mono" id="rec-time"></em></button>
@@ -84,7 +85,9 @@
           <button data-add="video">Video / Oynatma Listesi</button>
           <button data-add="image">Resim / Logo</button>
           <button data-add="color">Renk / Arka Plan</button>
-          <button data-add="title">Grafik / Alt Yazı</button>
+          <button data-add="title">Grafik / Alt Bant / Altyazı (33 şablon)</button>
+          <button data-add="studio">Sanal Stüdyo (hareketli arka plan)</button>
+          <button data-add="scene">Sahne / Çoklu Görüntü (PIP, yan yana, 2x2)</button>
           <button data-add="mic">Mikrofon / Ses Girişi</button>
           <button data-add="audio">Ses / Müzik Dosyası</button>
           <button data-add="replay">Anlık Tekrar (Yavaş Çekim)</button>
@@ -114,6 +117,7 @@
 
 <script src="js/chroma.js"></script>
 <script src="js/titles.js"></script>
+<script src="js/studio.js"></script>
 <script src="js/app.js"></script>
 </body>
 </html>

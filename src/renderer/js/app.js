@@ -11,7 +11,7 @@ const DEFAULTS = {
   encoder: 'libx264', preset: 'veryfast', vbitrate: 4500, abitrate: 160,
   recMode: 'copy', format: 'mp4', recbitrate: 12000, folder: '',
   transType: 'fade', transMs: 600, monitor: true, autoPause: true,
-  replayOn: true, replaySecs: 30,
+  replayOn: true, replaySecs: 30, autoUpdate: true,
   targets: [
     { name: 'YouTube', url: 'rtmp://a.rtmp.youtube.com/live2', key: '', enabled: true },
     { name: 'Twitch', url: 'rtmp://live.twitch.tv/app', key: '', enabled: false },
@@ -29,9 +29,9 @@ const PLATFORMS = {
   'Özel': ''
 };
 const TR_NAMES = { cut: 'Kes', fade: 'Geçiş', dip: 'Siyah', dipw: 'Beyaz', wipe: 'Silme', slide: 'Kaydır', push: 'İt', zoom: 'Yakınlaş', circle: 'Daire' };
-const APP_VERSION = '1.1.0';
+const APP_VERSION = '1.2.0';
 const GITHUB_URL = 'https://github.com/pepsicosamet-arch/NovaCanli';
-const TYPE_NAMES = { replay: 'TEKRAR', camera: 'KAMERA', screen: 'EKRAN', video: 'VİDEO', image: 'RESİM', color: 'RENK', title: 'GRAFİK', mic: 'MİKROFON', audio: 'SES' };
+const TYPE_NAMES = { studio: 'STÜDYO', scene: 'SAHNE', replay: 'TEKRAR', camera: 'KAMERA', screen: 'EKRAN', video: 'VİDEO', image: 'RESİM', color: 'RENK', title: 'GRAFİK', mic: 'MİKROFON', audio: 'SES' };
 
 let S = {
   settings: structuredClone(DEFAULTS),
@@ -222,10 +222,58 @@ function addColor(color = '#101a3a', color2 = '') {
 function addTitle(template = 'altbant', data) {
   const t = TITLE_TEMPLATES[template] || TITLE_TEMPLATES.altbant;
   const inp = baseInput('title', t.name);
-  inp.title = Object.assign({ template, accent: '#ff2d4b', textColor: '#ffffff', bg: 'rgba(10,12,18,0.88)' }, t.defaults, data || {});
+  inp.title = Object.assign({ template, accent: t.accent || '#ff2d4b', textColor: '#ffffff', bg: 'rgba(10,12,18,0.88)', itemIdx: 0 }, t.defaults, data || {});
   inp.el = document.createElement('canvas');
   inp.fit = 'stretch';
   return registerInput(inp);
+}
+
+function addStudio(style = 'haber', data) {
+  const st = STUDIO_STYLES[style] || STUDIO_STYLES.haber;
+  const inp = baseInput('studio', st.name);
+  inp.studio = Object.assign({ style, accent: st.accent, label: st.label, speed: 1 }, data || {});
+  inp.el = document.createElement('canvas'); inp.el.width = W; inp.el.height = H;
+  inp.fit = 'stretch';
+  return registerInput(inp);
+}
+
+// Sahne: birden fazla kaynağı tek görüntüde birleştirir (PIP, yan yana, 2x2 ...)
+function sceneCandidates(exceptId) {
+  const pri = { camera: 0, screen: 1, video: 2, replay: 3, image: 4 };
+  return S.inputs.filter(i => i.id !== exceptId && i.type in pri).sort((a, b) => pri[a.type] - pri[b.type]);
+}
+function applyScenePreset(inp, key) {
+  const pr = SCENE_PRESETS[key] || SCENE_PRESETS.pip_sag;
+  const old = inp.scene.layers, cand = sceneCandidates(inp.id);
+  inp.scene.preset = key;
+  inp.scene.layers = pr.cells.map((c, i) => ({ id: old[i]?.id ?? cand[i]?.id ?? null, x: c[0], y: c[1], w: c[2], h: c[3], fit: 'cover' }));
+  if ((key === 'roportaj' || key === 'yanyana' || key === 'haber' || key === 'uclu' || key === 'bir_iki') && !inp.scene.bg) inp.scene.bg = S.inputs.find(i => i.type === 'studio')?.id ?? null;
+}
+function addScene(preset = 'pip_sag') {
+  const inp = baseInput('scene', 'Sahne: ' + (SCENE_PRESETS[preset]?.name || ''));
+  inp.scene = { preset, bg: null, layers: [], border: 4, borderColor: '#ffffff', radius: 16, shadow: true };
+  inp.el = document.createElement('canvas'); inp.el.width = W; inp.el.height = H;
+  inp.fit = 'stretch';
+  applyScenePreset(inp, preset);
+  if (preset.startsWith('pip') || preset === 'oyun') inp.scene.radius = 18;
+  return registerInput(inp);
+}
+function renderScene(inp, t) {
+  const c = inp.el; if (c.width !== W || c.height !== H) { c.width = W; c.height = H; }
+  const x = c.getContext('2d'), sc = inp.scene, k = W / 1920;
+  x.fillStyle = '#000'; x.fillRect(0, 0, W, H);
+  const bg = byId(sc.bg); if (bg && bg.type !== 'scene' && hasVideo(bg)) drawContent(x, bg, 1, 0, 0, W, H, t, 'cover');
+  sc.layers.forEach((L, i) => {
+    const sub = byId(L.id); if (!sub || sub.type === 'scene' || !hasVideo(sub)) return;
+    const rx = L.x / 100 * W, ry = L.y / 100 * H, rw = L.w / 100 * W, rh = L.h / 100 * H, r = (sc.radius || 0) * k;
+    x.save();
+    if (sc.shadow && (i > 0 || L.w < 99)) { x.shadowColor = 'rgba(0,0,0,0.55)'; x.shadowBlur = 34 * k; x.shadowOffsetY = 10 * k; x.fillStyle = '#000'; x.beginPath(); x.roundRect(rx, ry, rw, rh, r); x.fill(); x.shadowColor = 'transparent'; }
+    x.beginPath(); x.roundRect(rx, ry, rw, rh, r); x.clip();
+    x.fillStyle = '#000'; x.fillRect(rx, ry, rw, rh);
+    drawContent(x, sub, 1, rx, ry, rw, rh, t, L.fit || 'cover');
+    x.restore();
+    if (sc.border > 0 && (i > 0 || L.w < 99)) { x.strokeStyle = sc.borderColor; x.lineWidth = sc.border * k; x.beginPath(); x.roundRect(rx, ry, rw, rh, r); x.stroke(); }
+  });
 }
 
 async function addMic(deviceId, label) {
@@ -336,7 +384,7 @@ const keyers = new Map();
 function srcSize(inp) {
   const e = inp.el;
   if (!e) return [0, 0];
-  if (e instanceof HTMLVideoElement) return e.readyState >= 2 ? [e.videoWidth, e.videoHeight] : [0, 0];
+  if (e instanceof HTMLVideoElement) return e.videoWidth && e.readyState >= 1 ? [e.videoWidth, e.videoHeight] : [0, 0];
   if (e instanceof HTMLImageElement) return e.complete && e.naturalWidth ? [e.naturalWidth, e.naturalHeight] : [0, 0];
   return [e.width, e.height];
 }
@@ -344,7 +392,11 @@ function srcSize(inp) {
 function drawInput(ctx, inp, alpha, cw, ch, tNow) {
   if (!inp || !hasVideo(inp) || alpha <= 0) return;
   const L = inp.layout;
-  const rx = L.x / 100 * cw, ry = L.y / 100 * ch, rw = L.w / 100 * cw, rh = L.h / 100 * ch;
+  drawContent(ctx, inp, alpha, L.x / 100 * cw, L.y / 100 * ch, L.w / 100 * cw, L.h / 100 * ch, tNow, null);
+}
+
+// Bir kaynağın içeriğini verilen dikdörtgene çizer (sahnelerde de kullanılır)
+function drawContent(ctx, inp, alpha, rx, ry, rw, rh, tNow, fitOverride) {
   const a = alpha * (inp.fx.opacity / 100);
   ctx.save();
   ctx.globalAlpha = a;
@@ -355,7 +407,12 @@ function drawInput(ctx, inp, alpha, cw, ch, tNow) {
     } else ctx.fillStyle = inp.src.color;
     ctx.fillRect(rx, ry, rw, rh); ctx.restore(); return;
   }
-  if (inp.type === 'title') TitleRenderer.render(inp.el, inp, W, H, inp.onAir ? (tNow - inp.onAirSince) / 1000 : 30);
+  if (inp._rt !== tNow) { // aynı karede bir kez çiz
+    if (inp.type === 'title') TitleRenderer.render(inp.el, inp, W, H, inp.onAir ? (tNow - inp.onAirSince) / 1000 : 30);
+    else if (inp.type === 'studio') StudioRenderer.render(inp.el, inp, W, H, tNow / 1000);
+    else if (inp.type === 'scene') renderScene(inp, tNow);
+    inp._rt = tNow;
+  }
   let [sw, sh] = srcSize(inp);
   if (!sw || !sh) { ctx.restore(); return; }
   let src = inp.el;
@@ -367,9 +424,10 @@ function drawInput(ctx, inp, alpha, cw, ch, tNow) {
   const sx = sw * C.l / 100, sy = sh * C.t / 100;
   const cw2 = Math.max(1, sw * (1 - (C.l + C.r) / 100)), ch2 = Math.max(1, sh * (1 - (C.t + C.b) / 100));
   let dx = rx, dy = ry, dw = rw, dh = rh, ssx = sx, ssy = sy, ssw = cw2, ssh = ch2;
-  if (inp.fit === 'contain') {
+  const fit = fitOverride || inp.fit;
+  if (fit === 'contain') {
     const s = Math.min(rw / cw2, rh / ch2); dw = cw2 * s; dh = ch2 * s; dx = rx + (rw - dw) / 2; dy = ry + (rh - dh) / 2;
-  } else if (inp.fit === 'cover') {
+  } else if (fit === 'cover') {
     const s = Math.max(rw / cw2, rh / ch2); ssw = rw / s; ssh = rh / s; ssx = sx + (cw2 - ssw) / 2; ssy = sy + (ch2 - ssh) / 2;
   }
   const f = inp.fx;
@@ -441,7 +499,10 @@ function renderProgram(t) {
 }
 
 let frame = 0, fpsCount = 0, fpsT = performance.now(), renderMs = 0, lastTick = performance.now();
-function tick() {
+let dropped = 0;
+function tick(e) {
+  // Bilgisayar yetişemezse geciken kareleri at: kuyruk birikmesin, arayüz donmasın
+  if (e && typeof e.data === 'number' && Date.now() - e.data > 1000 / (Number(S.settings.fps) || 30)) { dropped++; return; }
   const t0 = performance.now();
   const dt = Math.min(200, t0 - lastTick); lastTick = t0;
   replayTick(dt);
@@ -456,7 +517,7 @@ function tick() {
   renderMs = renderMs * 0.9 + (performance.now() - t0) * 0.1;
   if (t0 - fpsT >= 1000) {
     $('#st-fps').textContent = `${Math.round(fpsCount * 1000 / (t0 - fpsT))} fps`;
-    $('#st-render').textContent = `${renderMs.toFixed(1)} ms`;
+    $('#st-render').textContent = `${renderMs.toFixed(1)} ms${dropped ? ` • ${dropped} atlandı` : ''}`; dropped = 0;
     fpsCount = 0; fpsT = t0;
   }
 }
@@ -476,6 +537,7 @@ function updateOnAir(t) {
   if (S.programId) live.add(S.programId);
   if (S.trans) { live.add(S.trans.to); live.add(S.trans.from); }
   S.overlays.forEach(o => { if (o.on && o.inputId) live.add(o.inputId); });
+  for (const id of [...live]) { const sc = byId(id)?.scene; if (sc) { if (sc.bg) live.add(sc.bg); sc.layers.forEach(l => l.id && live.add(l.id)); } }
   for (const inp of S.inputs) {
     const on = live.has(inp.id);
     if (on !== inp.onAir) {
@@ -564,6 +626,7 @@ function renderInputs() {
         ${hasVideo(inp) ? `<button data-b="cut" title="Doğrudan programa kes">KES</button><button data-b="fade" title="Hızlı geçiş">GEÇ</button>` : ''}
         ${isMedia ? `<button data-b="play" title="Oynat / Duraklat">⏯</button><button data-b="restart" title="Başa sar">⏮</button>` : ''}
         ${inp.list && inp.list.length > 1 ? `<button data-b="next" title="Listede sonraki">⏭</button>` : ''}
+        ${titleHasList(inp) ? `<button data-b="tprev" title="Önceki isim / satır">⏮</button><button data-b="tnext" title="Sonraki isim / satır (N)">⏭</button>` : ''}
         ${inp.type === 'replay' ? `<button data-b="mark" title="Son saniyeleri yakala (R)">⏺</button><button data-b="speed" title="Hız">${inp.rp.speed}x</button>` : ''}
         ${hasVideo(inp) ? [1, 2, 3, 4].map(k => `<button class="ov" data-b="ov${k - 1}" title="Overlay ${k}">${k}</button>`).join('') : ''}
         <button data-b="set" title="Ayarlar">⚙</button>
@@ -581,6 +644,8 @@ function renderInputs() {
       else if (b === 'play' && m) m.paused ? m.play().catch(() => { }) : m.pause();
       else if (b === 'restart' && m) { m.currentTime = 0; }
       else if (b === 'next') nextInList(inp, 1, false);
+      else if (b === 'tnext') titleNext(inp, 1);
+      else if (b === 'tprev') titleNext(inp, -1);
       else if (b === 'mark') replayMark(inp);
       else if (b === 'speed') { const sp = [0.25, 0.5, 0.75, 1]; inp.rp.speed = sp[(sp.indexOf(inp.rp.speed) + 1) % sp.length]; e.target.textContent = inp.rp.speed + 'x'; }
       else if (b.startsWith('ov')) toggleOverlay(+b[2], inp.id);
@@ -600,9 +665,15 @@ function markInputs() {
   });
   renderOverlays();
 }
+const HEAVY = new Set(['title', 'studio', 'scene']);
+let thumbTick = 0;
 function drawThumbs(t) {
+  thumbTick++;
   for (const inp of S.inputs) {
     const c = thumbCtx.get(inp.id); if (!c) continue;
+    // Yayında olmayan grafik/stüdyo/sahne küçük resimleri saniyede ~1 kez yenilenir (performans)
+    if (HEAVY.has(inp.type) && !inp.onAir && inp.id !== S.previewId && inp._thumbOk && (thumbTick + inp.id) % 10 !== 0) continue;
+    inp._thumbOk = true;
     c.clearRect(0, 0, 256, 144);
     if (hasVideo(inp)) {
       drawInput(c, inp, 1, 256, 144, t);
@@ -619,6 +690,15 @@ function replayFirst() { return S.inputs.find(i => i.type === 'replay') || addRe
 function replayHotkey() {
   const inp = replayFirst();
   replayMark(inp).then(ok => { if (ok) quickTrans(inp.id, 'fade', 400); });
+}
+function titleHasList(inp) { const f = inp.type === 'title' && TITLE_TEMPLATES[inp.title.template]?.fields; return !!f && (f.includes('items') || f.includes('lines')); }
+function titleNext(inp, dir) {
+  const n = titleItemCount(inp.title);
+  if (!n) { toast(inp.title.srtCues?.length ? 'SRT altyazı zamanlamayla otomatik ilerler.' : 'Önce Ayarlar > Metin bölümünden isim listesi / satırları gir.', true); return; }
+  inp.title.itemIdx = (((inp.title.itemIdx || 0) + dir) % n + n) % n;
+  if (inp.onAir && inp.title.template !== 'altyazi') inp.onAirSince = performance.now(); // giriş animasyonunu tekrar oynat
+  const [a] = inp.title.template === 'altyazi' ? [''] : titleLines(inp.title);
+  toast(`${inp.name}: ${inp.title.itemIdx + 1}/${n}${a ? ' • ' + a : ''}`);
 }
 function updateVideoProgress() {
   for (const inp of S.inputs) {
@@ -846,7 +926,7 @@ async function pickFiles(kind) {
   if (NOVA) return (await NOVA.openFiles(kind)).map(p => ({ path: p, name: baseName(p) }));
   return new Promise(res => {
     const i = document.createElement('input'); i.type = 'file'; i.multiple = true;
-    i.accept = { video: 'video/*', image: 'image/*', audio: 'audio/*', project: '.nova' }[kind];
+    i.accept = { video: 'video/*', image: 'image/*', audio: 'audio/*', project: '.nova', srt: '.srt,.vtt,.txt' }[kind];
     i.onchange = () => res([...i.files].map(f => ({ url: URL.createObjectURL(f), name: f.name.replace(/\.[^.]+$/, ''), file: f })));
     i.click();
   });
@@ -859,6 +939,8 @@ async function addFlow(type) {
     else if (type === 'audio') (await pickFiles('audio')).forEach(addAudioFile);
     else if (type === 'color') { const i = addColor(); openInputSettings(i.id); }
     else if (type === 'replay') { const i = addReplay(); openInputSettings(i.id, 'tekrar'); }
+    else if (type === 'studio') pickStudio();
+    else if (type === 'scene') pickScene();
     else if (type === 'title') pickTitle();
     else if (type === 'camera' || type === 'mic') pickDevice(type);
     else if (type === 'screen') pickScreen();
@@ -906,19 +988,51 @@ async function pickScreen() {
 }
 
 function pickTitle() {
-  const grid = document.createElement('div'); grid.className = 'pick';
-  Object.entries(TITLE_TEMPLATES).forEach(([key, t]) => {
+  const wrap = document.createElement('div');
+  TITLE_CATS.forEach(cat => {
+  wrap.insertAdjacentHTML('beforeend', `<h3 class="cat-h">${cat}</h3>`);
+  const grid = document.createElement('div'); grid.className = 'pick'; wrap.appendChild(grid);
+  Object.entries(TITLE_TEMPLATES).filter(([, t]) => t.cat === cat).forEach(([key, t]) => {
     const b = document.createElement('button');
     const c = document.createElement('canvas');
-    const fake = { title: Object.assign({ template: key, accent: '#ff2d4b', textColor: '#fff', bg: 'rgba(10,12,18,0.88)' }, t.defaults) };
-    TitleRenderer.render(c, fake, 640, 360, 30);
+    const fake = { title: Object.assign({ template: key, accent: t.accent || '#ff2d4b', textColor: '#fff', bg: 'rgba(10,12,18,0.88)' }, t.defaults) };
+    TitleRenderer.render(c, fake, 640, 360, key === 'abone' ? 2.5 : key === 'bagis' ? 1.2 : 3);
     const img = document.createElement('img'); img.src = c.toDataURL();
     img.style.background = 'linear-gradient(135deg,#2a3550,#101522)';
     b.appendChild(img); b.insertAdjacentHTML('beforeend', `<span>${esc(t.name)}</span>`);
     b.onclick = () => { closeModal(); const i = addTitle(key); openInputSettings(i.id, 'title'); };
     grid.appendChild(b);
   });
-  modal('Grafik Şablonu Seç', grid);
+  });
+  modal(`Grafik Şablonu Seç (${Object.keys(TITLE_TEMPLATES).length} şablon)`, wrap);
+}
+
+function pickStudio() {
+  const grid = document.createElement('div'); grid.className = 'pick';
+  Object.entries(STUDIO_STYLES).forEach(([key, st]) => {
+    const b = document.createElement('button'), c = document.createElement('canvas');
+    const fake = { studio: { style: key, accent: st.accent, label: st.label, speed: 1 } };
+    StudioRenderer.render(c, fake, 640, 360, 2.2);
+    const img = document.createElement('img'); img.src = c.toDataURL('image/jpeg', 0.85);
+    b.appendChild(img); b.insertAdjacentHTML('beforeend', `<span>${esc(st.name)}</span>`);
+    b.onclick = () => { closeModal(); const i = addStudio(key); openInputSettings(i.id, 'studio'); };
+    grid.appendChild(b);
+  });
+  modal('Sanal Stüdyo Seç', grid);
+}
+
+function pickScene() {
+  const grid = document.createElement('div'); grid.className = 'pick';
+  Object.entries(SCENE_PRESETS).forEach(([key, pr]) => {
+    const b = document.createElement('button'), c = document.createElement('canvas'); c.width = 320; c.height = 180;
+    const x = c.getContext('2d'); x.fillStyle = key === 'roportaj' || key === 'haber' ? '#1b2a52' : '#0b0d12'; x.fillRect(0, 0, 320, 180);
+    pr.cells.forEach((q, i) => { x.fillStyle = ['#ff2d4b', '#4c8dff', '#19c37d', '#ffb020'][i % 4]; x.globalAlpha = i === 0 && q[2] > 99 ? 0.45 : 0.9; x.beginPath(); x.roundRect(q[0] * 3.2, q[1] * 1.8, q[2] * 3.2, q[3] * 1.8, 6); x.fill(); x.globalAlpha = 1; x.fillStyle = '#fff'; x.font = '700 20px Segoe UI, Arial'; x.fillText(String(i + 1), q[0] * 3.2 + 8, q[1] * 1.8 + 24); });
+    const img = document.createElement('img'); img.src = c.toDataURL();
+    b.appendChild(img); b.insertAdjacentHTML('beforeend', `<span>${esc(pr.name)}</span>`);
+    b.onclick = () => { closeModal(); const i = addScene(key); openInputSettings(i.id, 'sahne'); };
+    grid.appendChild(b);
+  });
+  modal('Sahne / Çoklu Görüntü Düzeni', grid);
 }
 
 // ---------------------------------------------------------------- Kaynak ayarları
@@ -928,6 +1042,8 @@ function openInputSettings(id, tab) {
   if (inp.type === 'title') tabs.push(['title', 'Metin & Stil']);
   if (inp.type === 'video') tabs.push(['liste', 'Oynatma Listesi']);
   if (inp.type === 'replay') tabs.push(['tekrar', 'Tekrar']);
+  if (inp.type === 'studio') tabs.push(['studio', 'Stüdyo']);
+  if (inp.type === 'scene') tabs.push(['sahne', 'Sahne Düzeni']);
   if (hasVideo(inp)) tabs.push(['konum', 'Konum / Kırp'], ['renk', 'Renk']);
   if (['camera', 'video', 'screen', 'image'].includes(inp.type)) tabs.push(['chroma', 'Yeşil Perde']);
   let cur = tab || 'genel';
@@ -976,25 +1092,88 @@ function openInputSettings(id, tab) {
       }
     } else if (cur === 'title') {
       const t = inp.title;
-      sel('Şablon', t, 'template', Object.entries(TITLE_TEMPLATES).map(([k, v]) => [k, v.name]), () => { Object.entries(TITLE_TEMPLATES[t.template].defaults).forEach(([k, v]) => { if (t[k] == null || t[k] === '') t[k] = v; }); draw(); });
-      const L = { line1: 'Satır 1', line2: 'Satır 2', label: 'Etiket', speed: 'Kayma hızı', minutes: 'Dakika', teamA: 'Takım A', teamB: 'Takım B', scoreA: 'Skor A', scoreB: 'Skor B' };
+      row('Şablon', `<select style="flex:1">${TITLE_CATS.map(cat => `<optgroup label="${cat}">${Object.entries(TITLE_TEMPLATES).filter(([, v]) => v.cat === cat).map(([k, v]) => `<option value="${k}" ${t.template === k ? 'selected' : ''}>${esc(v.name)}</option>`).join('')}</optgroup>`).join('')}</select>`);
+      g.lastElementChild.querySelector('select').onchange = (e) => {
+        t.template = e.target.value; const T = TITLE_TEMPLATES[t.template];
+        Object.entries(T.defaults).forEach(([k, v]) => { if (t[k] == null || t[k] === '') t[k] = v; });
+        if (T.accent) t.accent = T.accent;
+        inp.name = T.name; renderInputs(); draw();
+      };
       (TITLE_TEMPLATES[t.template].fields || []).forEach(f => {
+        const label = FIELD_LABELS[f] || f;
         if (f === 'scoreA' || f === 'scoreB') {
-          row(L[f], `<button>−</button><input type="number" value="${t[f]}" style="width:70px"><button>+</button>`);
+          row(label, `<button>−</button><input type="number" value="${t[f]}" style="width:70px"><button>+</button>`);
           const [mn, i, pl] = g.lastElementChild.children;
           i.oninput = () => t[f] = +i.value;
           mn.onclick = () => { t[f] = Math.max(0, (+t[f] || 0) - 1); i.value = t[f]; };
           pl.onclick = () => { t[f] = (+t[f] || 0) + 1; i.value = t[f]; };
-        } else txt(L[f], t, f, ['speed', 'minutes'].includes(f) ? 'number' : 'text', () => { if (f === 'minutes') inp._cdStart = null; });
+        } else if (FIELD_TEXTAREA.has(f)) {
+          row(label, `<textarea rows="4" style="flex:1;resize:vertical">${esc(t[f] || '')}</textarea>`);
+          const ta = g.lastElementChild.querySelector('textarea'); ta.oninput = () => { t[f] = ta.value; };
+        } else if (FIELD_SELECT[f]) {
+          sel(label, t, f, FIELD_SELECT[f].map(v => [v, v]));
+        } else if (FIELD_COLOR.has(f)) {
+          txt(label, t, f, 'color');
+        } else txt(label, t, f, FIELD_NUMBER.has(f) ? 'number' : 'text', () => { if (f === 'minutes') inp._cdStart = null; });
       });
-      if (t.template === 'geri') { row('', '<button>Sayacı yeniden başlat</button>'); g.lastElementChild.querySelector('button').onclick = () => inp._cdStart = null; }
+      if (titleHasList(inp) && t.template !== 'altyazi') {
+        row('Listede', `<button>⏮ Önceki</button><span style="flex:1;text-align:center" class="li-pos"></span><button>Sonraki ⏭</button>`);
+        const [pv, pos, nx] = g.lastElementChild.children;
+        const upd = () => { const n = titleItemCount(t); pos.textContent = n ? `${(t.itemIdx || 0) % n + 1} / ${n} • ${titleLines(t)[0]}` : 'Liste boş — tek isim kullanılır'; };
+        pv.onclick = () => { titleNext(inp, -1); upd(); }; nx.onclick = () => { titleNext(inp, 1); upd(); }; upd();
+      }
+      if (t.template === 'altyazi') {
+        row('SRT dosyası', `<button>SRT / VTT yükle</button><button>Kaldır</button><span style="flex:1" class="note"></span>`);
+        const [ld, rm, info] = g.lastElementChild.children;
+        const upd = () => info.textContent = t.srtCues?.length ? `${t.srtCues.length} altyazı yüklü • yayına girdiği andan itibaren zamanlı oynar` : 'Yok — satırlar ⏭ ile elle ilerletilir (N tuşu)';
+        ld.onclick = async () => {
+          const f = (await pickFiles('srt'))[0]; if (!f) return;
+          const txt2 = NOVA && f.path ? await NOVA.readFile(f.path) : await f.file.text();
+          t.srtCues = parseSRT(txt2); t.srtName = f.name; upd();
+          toast(t.srtCues.length ? `${t.srtCues.length} altyazı yüklendi.` : 'SRT okunamadı.', !t.srtCues.length);
+        };
+        rm.onclick = () => { t.srtCues = null; upd(); }; upd();
+        row('', `<button>⏮ Önceki satır</button><button>Sonraki satır ⏭</button><button>Zamanı baştan başlat</button>`);
+        const [p1, n1, rs] = g.lastElementChild.children;
+        p1.onclick = () => titleNext(inp, -1); n1.onclick = () => titleNext(inp, 1); rs.onclick = () => { inp.onAirSince = performance.now(); };
+      }
+      if (t.template === 'geri' || t.template === 'birazdan') { row('', '<button>Sayacı yeniden başlat</button>'); g.lastElementChild.querySelector('button').onclick = () => inp._cdStart = null; }
       if (t.template === 'sayac') { row('', '<button>Sıfırla</button>'); g.lastElementChild.querySelector('button').onclick = () => inp._swStart = performance.now(); }
+      if (t.template === 'futbol') { row('Maç saati', '<button>Sıfırla (başlangıç dakikasından)</button>'); g.lastElementChild.querySelector('button').onclick = () => inp._fbStart = null; }
       txt('Vurgu rengi', t, 'accent', 'color');
       txt('Yazı rengi', t, 'textColor', 'color');
       row('Kutu rengi', `<input type="color" value="${toHex(t.bg)}"><input type="range" min="0" max="100" value="${alphaOf(t.bg)}" title="Saydamlık">`);
       const [bc, ba] = g.lastElementChild.children;
       const upd = () => { const [r, gg, b] = hexToRgb(bc.value); t.bg = `rgba(${r},${gg},${b},${ba.value / 100})`; };
       bc.oninput = upd; ba.oninput = upd;
+    } else if (cur === 'studio') {
+      const st = inp.studio;
+      sel('Stüdyo', st, 'style', Object.entries(STUDIO_STYLES).map(([k, v]) => [k, v.name]), () => { const d = STUDIO_STYLES[st.style]; st.accent = d.accent; st.label = d.label; inp.name = d.name; renderInputs(); draw(); });
+      txt('Vurgu rengi', st, 'accent', 'color');
+      txt('Yazı (masa / tabela)', st, 'label', 'text');
+      rng('Hareket hızı', st, 'speed', 0, 3, 0.1);
+      g.insertAdjacentHTML('beforeend', `<span></span><p class="note">Stüdyoyu arka plan olarak programa al, yeşil perdeli kamerayı Overlay'de aç ya da bir Sahne'nin arka planı yap.</p>`);
+    } else if (cur === 'sahne') {
+      const sc = inp.scene;
+      const opts = [['', '— Yok —'], ...S.inputs.filter(i => i.id !== inp.id && i.type !== 'scene' && hasVideo(i)).map(i => [i.id, `${i.n}. ${i.name}`])];
+      sel('Hazır düzen', sc, 'preset', Object.entries(SCENE_PRESETS).map(([k, v]) => [k, v.name]), () => { applyScenePreset(inp, sc.preset); inp.name = 'Sahne: ' + SCENE_PRESETS[sc.preset].name; renderInputs(); draw(); });
+      row('Arka plan', `<select style="flex:1">${opts.map(([v, n]) => `<option value="${v}" ${String(sc.bg ?? '') === String(v) ? 'selected' : ''}>${esc(n)}</option>`).join('')}</select>`);
+      g.lastElementChild.querySelector('select').onchange = e => sc.bg = e.target.value ? +e.target.value : null;
+      sc.layers.forEach((L, k) => {
+        row(`Pencere ${k + 1}`, `<select style="flex:1">${opts.map(([v, n]) => `<option value="${v}" ${String(L.id ?? '') === String(v) ? 'selected' : ''}>${esc(n)}</option>`).join('')}</select>
+          <select title="Sığdırma"><option value="cover" ${L.fit === 'cover' ? 'selected' : ''}>Doldur</option><option value="contain" ${L.fit === 'contain' ? 'selected' : ''}>Sığdır</option></select>
+          ${['x', 'y', 'w', 'h'].map(q => `<input type="number" step="0.5" value="${L[q]}" title="${{ x: 'X %', y: 'Y %', w: 'Genişlik %', h: 'Yükseklik %' }[q]}" style="width:62px">`).join('')}`);
+        const [src, fit, ...nums] = g.lastElementChild.children;
+        src.onchange = () => L.id = src.value ? +src.value : null; fit.onchange = () => L.fit = fit.value;
+        nums.forEach((n, j) => n.oninput = () => L[['x', 'y', 'w', 'h'][j]] = +n.value);
+      });
+      row('', `<button>+ Pencere ekle</button><button>Son pencereyi sil</button>`);
+      const [ad, dl] = g.lastElementChild.children;
+      ad.onclick = () => { if (sc.layers.length < 6) { sc.layers.push({ id: null, x: 35, y: 35, w: 30, h: 30, fit: 'cover' }); draw(); } };
+      dl.onclick = () => { if (sc.layers.length > 1) { sc.layers.pop(); draw(); } };
+      rng('Çerçeve kalınlığı', sc, 'border', 0, 20); txt('Çerçeve rengi', sc, 'borderColor', 'color');
+      rng('Köşe yuvarlaklığı', sc, 'radius', 0, 80); chk('Gölge', sc, 'shadow');
+      g.insertAdjacentHTML('beforeend', `<span></span><p class="note">Pencerelere kamera, ekran, video, resim veya stüdyo seçebilirsin. Sahneyi programa aldığında içindeki videolar oynar, sesleri (AFV) açılır.</p>`);
     } else if (cur === 'liste') {
       g.style.gridTemplateColumns = '1fr';
       const ul = document.createElement('div'); ul.style.cssText = 'display:flex;flex-direction:column;gap:6px';
@@ -1109,6 +1288,7 @@ function openSettings(tab = 'stream') {
         <label>Kare hızı</label><select id="g-fps"><option>25</option><option>30</option><option>50</option><option>60</option></select>
         <label>Varsayılan geçiş</label><select id="g-tt">${Object.entries(TR_NAMES).filter(([k]) => k !== 'cut').map(([k, n]) => `<option value="${k}">${n}</option>`).join('')}</select>
         <label>Yayından çıkınca videoyu duraklat</label><input id="g-ap" type="checkbox">
+        <label>Güncellemeleri otomatik al</label><div class="row"><input id="g-au" type="checkbox"><span class="note" style="margin:0">Yeni sürüm arka planda iner, program kapanınca kurulur</span></div>
         <label>Anlık tekrar arabelleği</label><div class="row"><input id="g-rp" type="checkbox"><select id="g-rps"><option value="15">15 sn</option><option value="30">30 sn</option><option value="60">60 sn</option></select></div>
         <label>Hızlı geçiş butonları</label><div id="g-q" style="display:grid;grid-template-columns:1fr 80px;gap:6px"></div>
       </div>${busy() ? '<p class="note">Yayın/kayıt sürerken çözünürlük ve kare hızı değiştirilemez.</p>' : ''}`;
@@ -1118,6 +1298,7 @@ function openSettings(tab = 'stream') {
       fps.onchange = () => { st.fps = +fps.value; applyResolution(); };
       bind('#g-tt', 'transType', false, () => $('#tr-type').value = st.transType);
       const ap = $('#g-ap', sp); ap.checked = st.autoPause; ap.onchange = () => st.autoPause = ap.checked;
+      const au = $('#g-au', sp); au.checked = st.autoUpdate !== false; au.onchange = () => { st.autoUpdate = au.checked; if (au.checked) checkUpdates(false); };
       const rp = $('#g-rp', sp); rp.checked = st.replayOn; rp.onchange = () => { st.replayOn = rp.checked; if (!rp.checked) RP.frames = []; };
       bind('#g-rps', 'replaySecs', true);
       const q = $('#g-q', sp);
@@ -1155,7 +1336,9 @@ function serialize() {
     inputs: S.inputs.map(i => ({
       type: i.type, name: i.name, src: i.src, fit: i.fit, layout: i.layout, crop: i.crop, fx: i.fx, chroma: i.chroma,
       audio: { vol: i.audio.vol, muted: i.audio.muted, afv: i.audio.afv, comp: i.audio.comp }, loop: i.loop, autoPlay: i.autoPlay, title: i.title,
-      list: i.list?.filter(x => x.path).map(x => ({ path: x.path, name: x.name })), rp: i.rp ? { speed: i.rp.speed, secs: i.rp.secs } : undefined
+      list: i.list?.filter(x => x.path).map(x => ({ path: x.path, name: x.name })), rp: i.rp ? { speed: i.rp.speed, secs: i.rp.secs } : undefined,
+      studio: i.studio,
+      scene: i.scene ? { ...i.scene, bg: S.inputs.findIndex(x => x.id === i.scene.bg), layers: i.scene.layers.map(l => ({ ...l, id: S.inputs.findIndex(x => x.id === l.id) })) } : undefined
     })),
     previewIndex: S.inputs.findIndex(i => i.id === S.previewId),
     programIndex: S.inputs.findIndex(i => i.id === S.programId),
@@ -1189,6 +1372,8 @@ async function openProject() {
       else if (d.type === 'audio' && d.src.path) inp = addAudioFile({ path: d.src.path });
       else if (d.type === 'color') inp = addColor(d.src.color, d.src.color2);
       else if (d.type === 'title') inp = addTitle(d.title.template, d.title);
+      else if (d.type === 'studio') inp = addStudio(d.studio?.style, d.studio);
+      else if (d.type === 'scene') { inp = addScene(d.scene?.preset); inp._sceneData = d.scene; }
     } catch (e) { toast(`"${d.name}" yüklenemedi: ${e.message || e.name}`, true); }
     if (inp) {
       Object.assign(inp, { name: d.name, fit: d.fit, layout: d.layout, crop: d.crop, fx: d.fx, chroma: d.chroma, loop: d.loop, autoPlay: d.autoPlay });
@@ -1197,6 +1382,10 @@ async function openProject() {
     }
     made.push(inp);
   }
+  made.forEach(inp => { // sahne referanslarını yeni kimliklere çevir
+    if (!inp?._sceneData) return; const d = inp._sceneData; delete inp._sceneData;
+    Object.assign(inp.scene, d, { bg: made[d.bg]?.id ?? null, layers: d.layers.map(l => ({ ...l, id: made[l.id]?.id ?? null })) });
+  });
   S.previewId = made[p.previewIndex]?.id ?? S.previewId;
   S.programId = made[p.programIndex]?.id ?? null;
   (p.overlays || []).forEach((k, n) => { S.overlays[n].inputId = made[k]?.id ?? null; S.overlays[n].on = false; });
@@ -1226,15 +1415,23 @@ const ACTIONS = {
   record: toggleRecord, stream: toggleStream, snapshot, external: openExternal,
   settings: () => openSettings('stream'), save: () => saveProject(false), open: openProject,
   new: () => confirmBox('Tüm kaynaklar kaldırılıp yeni proje başlatılsın mı?', clearAll),
-  about: () => {
+  about: async () => {
+    const ver = NOVA?.appVersion ? await NOVA.appVersion() : APP_VERSION;
     const b = modal('Hakkında', `<div style="text-align:center;padding:10px 0 4px">
       <img src="img/icon.png" width="84" height="84" style="border-radius:18px"><h2 style="margin:10px 0 2px">NOVA Canlı</h2>
-      <div style="color:var(--dim)">Sürüm ${APP_VERSION}</div>
+      <div style="color:var(--dim)">Sürüm ${esc(ver)}</div>
       <p>vMix tarzı ücretsiz canlı yayın ve prodüksiyon programı.</p>
       <p><b>Geliştirici:</b> Samet Şahin — @xsametsahinx</p>
-      <p><a href="#" id="gh-link" style="color:var(--accent)">${GITHUB_URL.replace('https://', '')}</a></p></div>`);
+      <p><a href="#" id="gh-link" style="color:var(--accent)">${GITHUB_URL.replace('https://', '')}</a></p>
+      <div style="display:flex;gap:8px;justify-content:center;align-items:center;margin-top:12px">
+        <button id="upd-check" class="primary">Güncellemeleri denetle</button><button id="upd-install" style="display:none">Yeniden başlat ve güncelle</button></div>
+      <p class="note" id="upd-msg">${esc(updText())}</p></div>`);
     $('#gh-link', b).onclick = (e) => { e.preventDefault(); NOVA?.openUrl ? NOVA.openUrl(GITHUB_URL) : window.open(GITHUB_URL); };
+    $('#upd-check', b).onclick = () => checkUpdates(true);
+    $('#upd-install', b).onclick = () => installUpdate();
+    refreshUpdUI();
   },
+  update: () => UPD.st === 'ready' ? installUpdate() : ACTIONS.about(),
   help: () => modal('Klavye Kısayolları', `<table class="keys">
     <tr><td><kbd>Enter</kbd></td><td>KES (önizlemeyi programa al)</td></tr>
     <tr><td><kbd>Boşluk</kbd></td><td>Otomatik geçiş</td></tr>
@@ -1244,6 +1441,7 @@ const ACTIONS = {
     <tr><td><kbd>F1</kbd> … <kbd>F4</kbd></td><td>Overlay 1–4 aç/kapa</td></tr>
     <tr><td><kbd>B</kbd></td><td>Siyaha karart (FTB)</td></tr>
     <tr><td><kbd>R</kbd></td><td>Anlık tekrar: son anları yakala ve yayına al</td></tr>
+    <tr><td><kbd>N</kbd> / <kbd>Shift</kbd>+<kbd>N</kbd></td><td>Yayındaki alt bantta sonraki / önceki isim, altyazıda sonraki satır</td></tr>
     <tr><td><kbd>Ctrl</kbd> + <kbd>R</kbd></td><td>Kayıt başlat/durdur</td></tr>
     <tr><td><kbd>Ctrl</kbd> + <kbd>S</kbd></td><td>Projeyi kaydet</td></tr>
     <tr><td><kbd>Ctrl</kbd> + <kbd>O</kbd></td><td>Proje aç</td></tr>
@@ -1264,6 +1462,7 @@ document.addEventListener('keydown', e => {
   else if (k === 'F12') { e.preventDefault(); snapshot(); }
   else if (k.toLowerCase() === 'b' && !e.ctrlKey) ACTIONS.ftb();
   else if (k.toLowerCase() === 'r' && !e.ctrlKey) replayHotkey();
+  else if (k.toLowerCase() === 'n' && !e.ctrlKey) { const on = S.inputs.filter(i => i.onAir && titleHasList(i) && titleItemCount(i.title)); on.forEach(i => titleNext(i, e.shiftKey ? -1 : 1)); if (!on.length) toast('Yayında isim listeli grafik yok.', true); }
   else if (e.ctrlKey && k.toLowerCase() === 's') { e.preventDefault(); saveProject(e.shiftKey); }
   else if (e.ctrlKey && k.toLowerCase() === 'o') { e.preventDefault(); openProject(); }
   else if (e.ctrlKey && k.toLowerCase() === 'r') { e.preventDefault(); toggleRecord(); }
@@ -1275,6 +1474,44 @@ document.addEventListener('keydown', e => {
       if (e.shiftKey) quickCut(inp.id); else if (e.ctrlKey) { e.preventDefault(); quickTrans(inp.id); } else toPreview(inp.id);
     }
   }
+});
+
+// ---------------------------------------------------------------- Otomatik güncelleme
+const UPD = { st: 'idle', d: {} };
+function updText() {
+  const d = UPD.d;
+  return {
+    idle: 'Güncellemeler GitHub üzerinden otomatik denetlenir.', checking: 'Güncellemeler denetleniyor…',
+    none: `En güncel sürümü kullanıyorsun (v${d.version || APP_VERSION}).`, available: `Yeni sürüm bulundu: v${d.version}. İndiriliyor…`,
+    progress: `Güncelleme indiriliyor… %${d.percent || 0}`, ready: `v${d.version} hazır. Yeniden başlatınca kurulur (ya da program kapanınca otomatik).`,
+    error: `Güncelleme denetlenemedi: ${d.message || ''}`, off: d.reason || 'Güncelleme kullanılamıyor.'
+  }[UPD.st] || '';
+}
+function refreshUpdUI() {
+  const btn = $('#btn-upd');
+  const show = ['available', 'progress', 'ready'].includes(UPD.st);
+  btn.hidden = !show;
+  btn.classList.toggle('ready', UPD.st === 'ready');
+  btn.querySelector('span').textContent = UPD.st === 'ready' ? `GÜNCELLE v${UPD.d.version}` : UPD.st === 'progress' ? `İNDİRİLİYOR %${UPD.d.percent || 0}` : 'GÜNCELLEME';
+  const m = $('#upd-msg'); if (m) m.textContent = updText();
+  const ib = $('#upd-install'); if (ib) ib.style.display = UPD.st === 'ready' ? '' : 'none';
+}
+async function checkUpdates(manual) {
+  if (!NOVA?.updateCheck) { if (manual) { UPD.st = 'off'; UPD.d = { reason: 'Güncelleme sadece kurulu masaüstü sürümünde çalışır.' }; refreshUpdUI(); } return; }
+  const r = await NOVA.updateCheck();
+  if (!r.ok && manual) { UPD.st = 'off'; UPD.d = { reason: r.reason }; refreshUpdUI(); }
+}
+async function installUpdate() {
+  if (outState.stream || outState.record) return toast('Yayın / kayıt sürerken güncellenemez. Bitince tekrar dene ya da programı kapatınca otomatik kurulur.', true);
+  saveSettings();
+  const ok = await NOVA?.updateInstall?.();
+  if (!ok) toast('Güncelleme henüz hazır değil.', true);
+}
+if (NOVA?.onUpdateStatus) NOVA.onUpdateStatus((st, d) => {
+  const prev = UPD.st; UPD.st = st; UPD.d = d || {};
+  if (st === 'available' && prev !== 'available') toast(`Yeni sürüm v${d.version} bulundu, arka planda indiriliyor…`);
+  if (st === 'ready') toast(`NOVA Canlı v${d.version} indirildi. Üstteki "GÜNCELLE" düğmesiyle kur ya da program kapanınca otomatik kurulsun.`);
+  refreshUpdUI();
 });
 
 // ---------------------------------------------------------------- Başlat
@@ -1290,6 +1527,7 @@ document.addEventListener('keydown', e => {
   S.programId = bg.id; S.previewId = t.id;
   renderInputs();
   $('.credit').textContent = `NOVA Canlı v${APP_VERSION} • Samet Şahin (@xsametsahinx)`;
+  if (S.settings.autoUpdate !== false) { setTimeout(() => checkUpdates(false), 6000); setInterval(() => { if (S.settings.autoUpdate !== false && UPD.st !== 'ready') checkUpdates(false); }, 3 * 3600 * 1000); }
   toast('NOVA Canlı hazır. "+ Kaynak Ekle" ile başla.');
-  window.__nova = { addReplay, replayMark, replayHotkey, RP, S, cut, transition, toggleOverlay, startOutput, stopOutput, addTitle, addColor, addVideo, addImage, outState, prog }; // test erişimi
+  window.__nova = { addStudio, addScene, applyScenePreset, titleNext, pickTitle, pickStudio, pickScene, openInputSettings, addReplay, replayMark, replayHotkey, RP, S, cut, transition, toggleOverlay, startOutput, stopOutput, addTitle, addColor, addVideo, addImage, outState, prog }; // test erişimi
 })();

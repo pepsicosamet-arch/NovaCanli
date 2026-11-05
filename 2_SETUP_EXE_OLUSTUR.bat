@@ -6,7 +6,7 @@ where node >nul 2>nul
 if errorlevel 1 ( echo [!] Once Node.js kur: https://nodejs.org & start https://nodejs.org & pause & exit /b 1 )
 if not exist node_modules\electron (
   call npm install --save-dev electron@latest electron-builder@latest || goto hata
-  call npm install --save ffmpeg-static@latest || goto hata
+  call npm install --save ffmpeg-static@latest electron-updater@latest || goto hata
 )
 echo Kurulum dosyasi hazirlaniyor...
 call npm run dist || goto hata

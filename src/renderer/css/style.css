@@ -149,3 +149,12 @@ table.keys td { padding: 4px 12px 4px 0; }
 ::-webkit-scrollbar { width: 9px; height: 9px; }
 ::-webkit-scrollbar-thumb { background: #2a3040; border-radius: 6px; }
 .inp > * { flex-shrink: 0; }
+
+.cat-h { margin: 16px 0 8px; font-size: 12px; letter-spacing: 1px; text-transform: uppercase; color: var(--dim); }
+.cat-h:first-child { margin-top: 0; }
+textarea { font: inherit; color: var(--text); background: #0e1117; border: 1px solid var(--line2); border-radius: 6px; padding: 6px 8px; }
+optgroup { color: var(--dim); font-style: normal; }
+
+.out-btn.upd { background: #1b2a48; border-color: #2c4a85; font-size: 12px; }
+.out-btn.upd.ready { background: var(--pvw); border-color: var(--pvw); color: #04130b; animation: blink 1.6s infinite; }
+.out-btn[hidden] { display: none; }

@@ -12,7 +12,7 @@ if errorlevel 1 (
 if not exist node_modules\electron (
   echo [1/2] Gerekli paketler indiriliyor ^(Electron + ffmpeg^). Ilk seferde birkac dakika surebilir...
   call npm install --save-dev electron@latest electron-builder@latest || goto hata
-  call npm install --save ffmpeg-static@latest || goto hata
+  call npm install --save ffmpeg-static@latest electron-updater@latest || goto hata
 )
 echo [2/2] NOVA Canli baslatiliyor...
 call npm start

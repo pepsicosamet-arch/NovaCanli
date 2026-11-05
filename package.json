@@ -1,7 +1,7 @@
 {
   "name": "nova-canli",
   "productName": "NOVA Canlı",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "description": "NOVA Canlı - vMix benzeri canlı yayın ve prodüksiyon programı",
   "author": "Samet Şahin (@xsametsahinx)",
   "license": "MIT",
@@ -24,6 +24,7 @@
       "src/**/*",
       "build/icon.png",
       "package.json",
+      "node_modules/**/*",
       "!node_modules/ffmpeg-static/**"
     ],
     "extraResources": [
@@ -55,7 +56,15 @@
       "installerLanguages": [
         "tr_TR"
       ]
-    }
+    },
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "pepsicosamet-arch",
+        "repo": "NovaCanli",
+        "releaseType": "release"
+      }
+    ]
   },
   "repository": {
     "type": "git",

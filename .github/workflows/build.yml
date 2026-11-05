@@ -28,18 +28,27 @@ jobs:
       - name: Paketleri kur
         run: |
           npm install --save-dev electron@latest electron-builder@latest
-          npm install --save ffmpeg-static@latest
+          npm install --save ffmpeg-static@latest electron-updater@latest
 
       - name: Setup.exe oluştur
         run: npx electron-builder --win nsis --x64 --publish never
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: false
 
+      - name: Güncelleme dosyalarını kontrol et
+        shell: bash
+        run: |
+          ls -la dist
+          test -f dist/latest.yml || { echo "latest.yml oluşmadı - otomatik güncelleme çalışmaz"; exit 1; }
+          cat dist/latest.yml
+
       - name: Derleme çıktısını sakla
         uses: actions/upload-artifact@v4
         with:
           name: NOVA-Canli-Setup
-          path: dist/*.exe
+          path: |
+            dist/*.exe
+            dist/latest.yml
 
       # Sürüm etiketi (v1.1.0 gibi) yoksa oluşturulur, varsa Setup.exe güncellenir
       - name: GitHub Release'e yükle
@@ -48,6 +57,9 @@ jobs:
           tag_name: v${{ steps.ver.outputs.v }}
           name: NOVA Canlı v${{ steps.ver.outputs.v }}
           target_commitish: ${{ github.sha }}
-          files: dist/*.exe
+          files: |
+            dist/*.exe
+            dist/*.exe.blockmap
+            dist/latest.yml
           body_path: RELEASE_NOTES.md
           make_latest: true

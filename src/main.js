@@ -5,6 +5,11 @@ const path = require('path');
 const fs = require('fs');
 const { Readable } = require('stream');
 
+// Otomatik güncelleme (GitHub Releases). Paket yoksa veya geliştirme modundaysa sessizce devre dışı.
+let autoUpdater = null;
+try { autoUpdater = require('electron-updater').autoUpdater; } catch (e) { autoUpdater = null; }
+let updateReady = false;
+
 // Uygulama ve medya dosyaları aynı kökenden (nova://app) sunulur; böylece
 // videolar tuvale çizilip yayına/kayda temiz şekilde aktarılabilir.
 protocol.registerSchemesAsPrivileged([{
@@ -143,6 +148,7 @@ ipcMain.handle('open-files', async (e, kind) => {
     video: [{ name: 'Video', extensions: ['mp4', 'webm', 'mov', 'mkv', 'm4v', 'ogv'] }],
     image: [{ name: 'Resim', extensions: ['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'svg'] }],
     audio: [{ name: 'Ses', extensions: ['mp3', 'wav', 'ogg', 'm4a', 'aac', 'flac'] }],
+    srt: [{ name: 'Altyazı', extensions: ['srt', 'vtt', 'txt'] }],
     project: [{ name: 'NOVA Canlı Projesi', extensions: ['nova'] }]
   }[kind] || [];
   const r = await dialog.showOpenDialog(win, { properties: kind === 'project' ? ['openFile'] : ['openFile', 'multiSelections'], filters });
@@ -173,6 +179,35 @@ ipcMain.handle('default-folder', () => {
 });
 ipcMain.handle('open-folder', (e, dir) => shell.openPath(dir));
 ipcMain.handle('open-url', (e, url) => { if (/^https:\/\//.test(url)) shell.openExternal(url); });
+
+// ---------- Güncelleme ----------
+let updaterWired = false;
+function wireUpdater() {
+  if (updaterWired || !autoUpdater) return;
+  updaterWired = true;
+  const send = (st, d) => { if (win && !win.isDestroyed()) win.webContents.send('update-status', st, d || {}); };
+  autoUpdater.autoDownload = true;
+  autoUpdater.autoInstallOnAppQuit = true;
+  autoUpdater.on('checking-for-update', () => send('checking'));
+  autoUpdater.on('update-available', (i) => send('available', { version: i.version }));
+  autoUpdater.on('update-not-available', () => send('none', { version: app.getVersion() }));
+  autoUpdater.on('download-progress', (p) => send('progress', { percent: Math.round(p.percent || 0), speed: p.bytesPerSecond }));
+  autoUpdater.on('update-downloaded', (i) => { updateReady = true; send('ready', { version: i.version }); });
+  autoUpdater.on('error', (err) => send('error', { message: String((err && err.message) || err).split('\n')[0] }));
+}
+ipcMain.handle('app-version', () => app.getVersion());
+ipcMain.handle('update-check', async () => {
+  if (!autoUpdater) return { ok: false, reason: 'Güncelleyici bu kurulumda yok.' };
+  if (!app.isPackaged) return { ok: false, reason: 'Geliştirme modunda güncelleme denetlenmez.' };
+  wireUpdater();
+  try { await autoUpdater.checkForUpdates(); return { ok: true }; } catch (e) { return { ok: false, reason: String(e.message || e).split('\n')[0] }; }
+});
+ipcMain.handle('update-install', () => {
+  if (!updateReady) return false;
+  if (outputs.stream || outputs.record) return false; // yayın/kayıt sırasında kapatma
+  setImmediate(() => autoUpdater.quitAndInstall(false, true));
+  return true;
+});
 
 ipcMain.handle('save-snapshot', async (e, dir, dataUrl) => {
   fs.mkdirSync(dir, { recursive: true });

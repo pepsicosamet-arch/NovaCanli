@@ -27,18 +27,22 @@ Geliştirici: **Samet Şahin (@xsametsahinx)**
 | Önizleme / Program | vMix tarzı iki monitör. KES, OTOMATİK, T-bar ile elle geçiş, 4 hızlı geçiş butonu, FTB (siyaha karart). |
 | Geçişler | Fade, Siyaha, Beyaza, Silme, Kaydır, İt, Yakınlaş, Daire — süre ayarlı. |
 | Overlay | 4 overlay kanalı (F1–F4): alt yazı, logo, resim içinde resim (PIP), yeşil perdeli kamera. |
-| Grafikler | Alt bant (klasik/modern), tam ekran başlık, kayan haber bandı, saat-tarih, geri sayım, kronometre, skor tabelası, sosyal medya kutusu. Renkler düzenlenebilir, giriş animasyonlu. |
+| Grafikler (33) | **Alt bant:** klasik, modern, cam, neon, sade, röportaj, konum • **Haber:** kayan yazı, haber bandı, son dakika, hava durumu, alıntı • **Spor:** skor, futbol skorbord (maç saatli), maç sonucu • **Yayın ekranı:** birazdan başlıyoruz, ara, yayın bitti, başlık, geri sayım • **Sosyal:** abone ol, sosyal döngü, izleyici mesajı, bağış uyarısı • **Araç:** CANLI rozeti, filigran, şimdi çalıyor, anket, hedef çubuğu, saat, kronometre. Hepsi animasyonlu, renkleri düzenlenebilir. |
+| İsim listesi & altyazı | Alt bantlara çok sayıda isim (`Ad \| Unvan`), `N` ile sıradaki. Altyazı: satır satır ya da **SRT/VTT** ile zamanlı. |
+| Sanal stüdyo (11) | Hareketli arka planlar: haber, talk show, oyun/neon, teknoloji, podcast, stadyum, konser, dalgalar, parçacıklar, uzay, kurumsal. |
+| Sahne / çoklu görüntü | PIP, yan yana, 2x2, 1+2, üçlü, haber, röportaj, oyun yayını düzenleri; çerçeve, köşe, gölge, stüdyo arka planı. |
 | Anlık tekrar | Program çıktısının son 15–60 saniyesi hafızada; `R` tuşu son anı yakalar ve 0.25x–1x yavaş çekimle yayına alır. |
 | Görüntü | Konum/boyut, kırpma, sığdır/doldur/esnet, parlaklık-kontrast-doygunluk, opaklık, ayna, **yeşil perde (GPU chroma key)**. |
 | Ses mikseri | Kanal başına fader, sustur, AFV (ses görüntüyü izlesin), kompresör, peak-hold VU metreler, master, kulaklıktan dinleme. |
 | Yayın | RTMP/RTMPS: YouTube, Twitch, Kick, Facebook, Instagram, TikTok, özel sunucu. **Aynı anda çoklu platform.** |
 | Kodlama | x264 (işlemci), NVIDIA NVENC, Intel QuickSync, AMD AMF; bit hızı/ön ayar seçimi. |
 | Kayıt | MP4 veya MKV, hızlı (kopyala) ya da yeniden kodlama modu; yayınla aynı anda kayıt. |
+| Otomatik güncelleme | Yeni sürüm GitHub'dan arka planda iner, program kapanınca kurulur (Ayarlar > Genel'den kapatılabilir). |
 | Diğer | 1080p / 720p / 1440p / dikey 9:16 (TikTok-Reels), 25/30/50/60 fps, harici çıkış penceresi (projeksiyon / 2. monitör), PNG fotoğraf, proje kaydet/aç (`.nova`). |
 
 ## ⌨️ Kısayollar
 
-`Enter` Kes • `Boşluk` Otomatik geçiş • `1–9` Önizlemeye al • `Shift+1–9` Direkt programa • `Ctrl+1–9` Hızlı geçiş • `F1–F4` Overlay • `B` FTB • `R` Anlık tekrar • `Ctrl+R` Kayıt • `Ctrl+S` Kaydet • `Ctrl+O` Aç • `F12` Fotoğraf
+`Enter` Kes • `Boşluk` Otomatik geçiş • `1–9` Önizlemeye al • `Shift+1–9` Direkt programa • `Ctrl+1–9` Hızlı geçiş • `F1–F4` Overlay • `B` FTB • `R` Anlık tekrar • `N` / `Shift+N` Sonraki / önceki isim • `Ctrl+R` Kayıt • `Ctrl+S` Kaydet • `Ctrl+O` Aç • `F12` Fotoğraf
 
 ## 🛠️ Kaynak koddan çalıştırma
 
