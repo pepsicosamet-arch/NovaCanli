@@ -46,7 +46,7 @@ Geliştirici: **Samet Şahin (@xsametsahinx)**
 2. **`1_KUR_VE_CALISTIR.bat`** → paketleri indirir ve programı açar.
 3. **`2_SETUP_EXE_OLUSTUR.bat`** → `dist\NOVA-Canli-Setup-x.x.x.exe` oluşturur.
 
-X
+Yeni sürüm yayınlamak için `package.json` içindeki sürümü artır (örn. `1.2.0`), `RELEASE_NOTES.md`'yi güncelle ve GitHub'a yükle; GitHub Actions Setup.exe'yi otomatik derleyip `v1.2.0` olarak Releases'e ekler.
 
 ## Teknik yapı
 
