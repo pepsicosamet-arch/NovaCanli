@@ -12,7 +12,7 @@ const DEFAULTS = {
   recMode: 'copy', format: 'mp4', recbitrate: 12000, folder: '',
   transType: 'fade', transMs: 600, monitor: true, autoPause: true,
   replayOn: true, replaySecs: 30, autoUpdate: true,
-  recBus: 'M', monBus: 'M', streamBus: 'M', replayExtraHalf: true,
+  recBus: 'M', monBus: 'M', streamBus: 'M', replayExtraHalf: true, replayQuality: 'med',
   stingers: [
     { kind: 'builtin', style: 'serit', color: '#ff2d4b', dur: 1000, cut: 500 },
     { kind: 'builtin', style: 'logo', color: '#7b3cff', dur: 1200, cut: 600 },
@@ -40,9 +40,9 @@ const PLATFORMS = {
   'Özel': ''
 };
 const TR_NAMES = { cut: 'Kes', fade: 'Geçiş', alphafade: 'AlfaGeçiş', dip: 'Siyah', dipw: 'Beyaz', wipe: 'Silme', slide: 'Kaydır', push: 'İt', zoom: 'Yakınlaş', circle: 'Daire' };
-const APP_VERSION = '1.3.0';
+const APP_VERSION = '1.4.0';
 const GITHUB_URL = 'https://github.com/pepsicosamet-arch/NovaCanli';
-const TYPE_NAMES = { photos: 'FOTO', studio: 'STÜDYO', scene: 'SAHNE', replay: 'TEKRAR', camera: 'KAMERA', screen: 'EKRAN', video: 'VİDEO', image: 'RESİM', color: 'RENK', title: 'GRAFİK', mic: 'MİKROFON', audio: 'SES' };
+const TYPE_NAMES = { web: 'WEB', delay: 'GECİKME', draw: 'ÇİZİM', photos: 'FOTO', studio: 'STÜDYO', scene: 'SAHNE', replay: 'TEKRAR', camera: 'KAMERA', screen: 'EKRAN', video: 'VİDEO', image: 'RESİM', color: 'RENK', title: 'GRAFİK', mic: 'MİKROFON', audio: 'SES' };
 
 let S = {
   settings: structuredClone(DEFAULTS),
@@ -145,6 +145,8 @@ function updateMaster() {
 
 // ---------------------------------------------------------------- Kaynaklar
 const mediaUrl = (p) => `nova://app/__media?p=${encodeURIComponent(p)}`;
+const netUrl = (u) => NOVA ? `nova://app/__url?u=${encodeURIComponent(u)}` : u;
+const isNet = (u) => /^https?:\/\//i.test(String(u || ''));
 const hasVideo = (i) => i.type !== 'mic' && i.type !== 'audio';
 const hasAudio = (i) => !!i.a;
 const byId = (id) => S.inputs.find(i => i.id === id);
@@ -162,7 +164,8 @@ function baseInput(type, name) {
 }
 
 function registerInput(inp) {
-  S.inputs.push(inp);
+  if (Number.isInteger(S._insertAt) && S._insertAt >= 0 && S._insertAt < S.inputs.length) S.inputs.splice(S._insertAt++, 0, inp);
+  else S.inputs.push(inp);
   renumber();
   if (S.previewId == null && hasVideo(inp)) S.previewId = inp.id;
   renderInputs(); renderMixer(); renderOverlays();
@@ -170,13 +173,15 @@ function registerInput(inp) {
 }
 function renumber() { S.inputs.forEach((i, n) => i.n = n + 1); }
 
-async function addCamera(deviceId, label) {
+async function addCamera(deviceId, label, opts) {
+  const o = Object.assign({ w: 1920, h: 1080, fps: 60, audioId: null }, opts || {});
   const stream = await navigator.mediaDevices.getUserMedia({
-    video: { deviceId: deviceId ? { exact: deviceId } : undefined, width: { ideal: 1920 }, height: { ideal: 1080 }, frameRate: { ideal: 60 } },
-    audio: false
+    video: { deviceId: deviceId ? { exact: deviceId } : undefined, width: { ideal: o.w }, height: { ideal: o.h }, frameRate: { ideal: o.fps } },
+    audio: o.audioId ? { deviceId: { exact: o.audioId }, echoCancellation: false, noiseSuppression: false, autoGainControl: false } : false
   });
   const inp = baseInput('camera', label || 'Kamera');
-  inp.src = { deviceId, label };
+  inp.src = { deviceId, label, opts: o };
+  if (stream.getAudioTracks().length) { inp.audio.afv = true; setupAudio(inp, AC.createMediaStreamSource(new MediaStream(stream.getAudioTracks()))); }
   inp.stream = stream;
   inp.el = mkVideo(); inp.el.srcObject = stream; inp.el.muted = true; inp.el.play().catch(() => { });
   return registerInput(inp);
@@ -222,7 +227,8 @@ function loadListItem(inp, i, play) {
   const it = inp.list[i]; if (!it) return;
   inp.idx = i;
   const v = inp.el;
-  v.src = it.path ? mediaUrl(it.path) : it.url;
+  if (!NOVA && isNet(it.url)) v.crossOrigin = 'anonymous';
+  v.src = it.path ? mediaUrl(it.path) : isNet(it.url) ? netUrl(it.url) : it.url;
   v.loop = inp.loop && inp.list.length === 1;
   v.load();
   if (play) v.play().catch(() => { });
@@ -369,6 +375,110 @@ function checkCountdowns() {
   }
 }
 
+// ---- Web Tarayıcı kaynağı (OBS "browser source" gibi): masaüstünde görünmez bir tarayıcı sayfayı çizer
+let webSeq = 0;
+function addWeb(cfg) {
+  const inp = baseInput('web', 'Web Tarayıcı');
+  inp.web = Object.assign({ url: 'https://example.com', w: 1280, h: 720, fps: 30, css: '', audio: false, transparent: true }, cfg || {});
+  try { inp.name = new URL(inp.web.url).hostname.replace(/^www\./, '') || inp.name; } catch { }
+  inp.el = document.createElement('canvas'); inp.el.width = inp.web.w; inp.el.height = inp.web.h;
+  inp._webId = 'w' + (++webSeq) + '_' + Date.now();
+  inp.fit = 'contain';
+  webDrawInfo(inp, NOVA?.webOpen ? 'Sayfa yükleniyor…' : 'Web Tarayıcı kaynağı masaüstü uygulamasında çalışır');
+  NOVA?.webOpen?.(inp._webId, inp.web);
+  return registerInput(inp);
+}
+function webDrawInfo(inp, msg) {
+  const c = inp.el.getContext('2d'), w = inp.el.width, h = inp.el.height;
+  c.clearRect(0, 0, w, h); c.fillStyle = 'rgba(10,12,18,0.6)'; c.fillRect(0, 0, w, h);
+  c.fillStyle = '#c3c9dc'; c.font = `600 ${h / 22}px Segoe UI, Arial`; c.textAlign = 'center'; c.textBaseline = 'middle';
+  c.fillText(msg, w / 2, h / 2 - h / 30); c.fillStyle = '#8a93a8'; c.font = `500 ${h / 34}px Segoe UI, Arial`; c.fillText(inp.web.url, w / 2, h / 2 + h / 22);
+}
+function webApply(inp) { // ayar değişince sayfayı yeniden aç
+  inp.el.width = inp.web.w; inp.el.height = inp.web.h;
+  NOVA?.webClose?.(inp._webId); inp._webId = 'w' + (++webSeq) + '_' + Date.now();
+  webDrawInfo(inp, 'Sayfa yükleniyor…'); NOVA?.webOpen?.(inp._webId, inp.web);
+}
+if (NOVA?.onWebFrame) NOVA.onWebFrame((id, w, h, buf) => { const inp = S.inputs.find(i => i._webId === id); if (inp) inp._webPending = { w, h, buf }; });
+if (NOVA?.onWebEvent) NOVA.onWebEvent((id, ev, info) => {
+  const inp = S.inputs.find(i => i._webId === id); if (!inp) return;
+  if (ev === 'fail') { webDrawInfo(inp, 'Sayfa açılamadı: ' + (info || '')); toast(`${inp.name}: sayfa açılamadı (${info || 'hata'})`, true); }
+  if (ev === 'title' && info && inp.name === 'Web Tarayıcı') { inp.name = String(info).slice(0, 40); renderInputs(); }
+});
+function renderWeb(inp) {
+  const f = inp._webPending; if (!f) return; inp._webPending = null;
+  const c = inp.el; if (c.width !== f.w || c.height !== f.h) { c.width = f.w; c.height = f.h; }
+  const u8 = f.buf.byteOffset % 4 ? f.buf.slice() : f.buf;
+  const src = new Uint32Array(u8.buffer, u8.byteOffset, f.w * f.h);
+  const img = new ImageData(f.w, f.h), dst = new Uint32Array(img.data.buffer);
+  for (let i = 0; i < src.length; i++) { const v = src[i]; dst[i] = (v & 0xff00ff00) | ((v & 0xff) << 16) | ((v >> 16) & 0xff); } // BGRA → RGBA
+  c.getContext('2d').putImageData(img, 0, 0);
+}
+
+// ---- Video gecikmesi (Video Delay): bir kaynağı N ms geriden gösterir (ses/görüntü senkronu, sansür payı)
+function addDelay(srcId, ms = 2000) {
+  const inp = baseInput('delay', 'Video Gecikmesi');
+  inp.delay = { src: srcId ?? null, ms };
+  inp.el = document.createElement('canvas'); inp.el.width = W; inp.el.height = H;
+  inp._dl = { cv: document.createElement('canvas'), frames: [], busy: 0, bm: null, shown: -1, loading: false };
+  inp.fit = 'stretch';
+  const s = byId(srcId); if (s) inp.name = `${s.name} (+${(ms / 1000).toFixed(1)} sn)`;
+  return registerInput(inp);
+}
+function delayCapture(t) {
+  for (const inp of S.inputs) {
+    if (inp.type !== 'delay') continue;
+    const D = inp._dl, src = byId(inp.delay.src);
+    if (!src || !hasVideo(src) || src.type === 'delay' || D.busy > 6) continue;
+    const w = 960, h = Math.round(960 * H / W); if (D.cv.width !== w || D.cv.height !== h) { D.cv.width = w; D.cv.height = h; }
+    const c = D.cv.getContext('2d', { alpha: false }); c.fillStyle = '#000'; c.fillRect(0, 0, w, h);
+    drawContent(c, src, 1, 0, 0, w, h, t, null);
+    D.busy++;
+    D.cv.toBlob(b => { D.busy--; if (!b) return; D.frames.push({ t, b }); const lim = t - inp.delay.ms - 1500; while (D.frames.length > 2 && D.frames[0].t < lim) D.frames.shift(); }, 'image/jpeg', 0.82);
+  }
+}
+function renderDelay(inp, t) {
+  const D = inp._dl, target = t - inp.delay.ms;
+  let i = -1; for (let k = D.frames.length - 1; k >= 0; k--) if (D.frames[k].t <= target) { i = k; break; }
+  const c = inp.el; if (c.width !== W || c.height !== H) { c.width = W; c.height = H; }
+  if (i < 0) { if (D.shown < 0) { const x = c.getContext('2d'); x.fillStyle = '#05070c'; x.fillRect(0, 0, W, H); x.fillStyle = '#8a93a8'; x.font = `600 ${H / 24}px Segoe UI, Arial`; x.textAlign = 'center'; x.textBaseline = 'middle'; x.fillText(byId(inp.delay.src) ? 'Gecikme tamponu doluyor…' : 'Ayarlardan kaynak seç', W / 2, H / 2); } return; }
+  const f = D.frames[i]; if (f.t === D.shown || D.loading) return;
+  D.loading = true;
+  createImageBitmap(f.b).then(bm => { D.loading = false; D.shown = f.t; c.getContext('2d').drawImage(bm, 0, 0, W, H); bm.close(); }).catch(() => { D.loading = false; });
+}
+
+// ---- Telestratör: canlı görüntünün üstüne çizim (ok, daire, kalem) — overlay olarak kullanılır
+function addDraw(cfg) {
+  const inp = baseInput('draw', 'Telestratör');
+  inp.draw = Object.assign({ strokes: [], color: '#ffd23f', size: 8, tool: 'pen' }, cfg || {});
+  inp.el = document.createElement('canvas'); inp.el.width = W; inp.el.height = H;
+  inp.fit = 'stretch';
+  return registerInput(inp);
+}
+function drawStrokes(c, strokes, w, h) {
+  c.lineCap = 'round'; c.lineJoin = 'round';
+  for (const st of strokes) {
+    const P = st.pts; if (!P.length) continue;
+    c.strokeStyle = st.c; c.fillStyle = st.c; c.lineWidth = st.w * w / 1920;
+    c.shadowColor = 'rgba(0,0,0,0.55)'; c.shadowBlur = 6 * w / 1920;
+    if (st.tool === 'circle' && P.length > 1) {
+      const [a, b] = [P[0], P[P.length - 1]];
+      c.beginPath(); c.ellipse((a[0] + b[0]) / 2 * w, (a[1] + b[1]) / 2 * h, Math.abs(b[0] - a[0]) / 2 * w, Math.abs(b[1] - a[1]) / 2 * h, 0, 0, Math.PI * 2); c.stroke();
+    } else if (st.tool === 'arrow' && P.length > 1) {
+      const [a, b] = [P[0], P[P.length - 1]], ax = a[0] * w, ay = a[1] * h, bx = b[0] * w, by = b[1] * h, ang = Math.atan2(by - ay, bx - ax), hl = st.w * w / 1920 * 4;
+      c.beginPath(); c.moveTo(ax, ay); c.lineTo(bx, by); c.stroke();
+      c.beginPath(); c.moveTo(bx, by); c.lineTo(bx - hl * Math.cos(ang - 0.45), by - hl * Math.sin(ang - 0.45)); c.lineTo(bx - hl * Math.cos(ang + 0.45), by - hl * Math.sin(ang + 0.45)); c.closePath(); c.fill();
+    } else {
+      c.beginPath(); c.moveTo(P[0][0] * w, P[0][1] * h); for (const p of P) c.lineTo(p[0] * w, p[1] * h); c.stroke();
+    }
+  }
+  c.shadowBlur = 0;
+}
+function renderDraw(inp) {
+  const c = inp.el; if (c.width !== W || c.height !== H) { c.width = W; c.height = H; }
+  const x = c.getContext('2d'); x.clearRect(0, 0, W, H); drawStrokes(x, inp.draw.strokes, W, H);
+}
+
 function addStudio(style = 'haber', data) {
   const st = STUDIO_STYLES[style] || STUDIO_STYLES.haber;
   const inp = baseInput('studio', st.name);
@@ -417,12 +527,13 @@ function renderScene(inp, t) {
   });
 }
 
-async function addMic(deviceId, label) {
+async function addMic(deviceId, label, opts) {
+  const o = Object.assign({ ec: false, ns: false, agc: false }, opts || {});
   const stream = await navigator.mediaDevices.getUserMedia({
-    audio: { deviceId: deviceId ? { exact: deviceId } : undefined, echoCancellation: false, noiseSuppression: false, autoGainControl: false }, video: false
+    audio: { deviceId: deviceId ? { exact: deviceId } : undefined, echoCancellation: o.ec, noiseSuppression: o.ns, autoGainControl: o.agc }, video: false
   });
   const inp = baseInput('mic', label || 'Mikrofon');
-  inp.src = { deviceId, label };
+  inp.src = { deviceId, label, opts: o };
   inp.stream = stream;
   setupAudio(inp, AC.createMediaStreamSource(stream));
   return registerInput(inp);
@@ -442,10 +553,13 @@ function addAudioFile(file) {
 // ---------------------------------------------------------------- Anlık tekrar (Instant Replay) — çok açılı
 // 4 açıya kadar (Program + kameralar) sürekli küçük JPEG kareler olarak hafızada tutulur (son N saniye).
 // Her yakalama bir "olay" olur: etiketlenir, aranır, tek açıdan ya da Quad View (4'lü) oynatılır.
-const RP = { bufs: [0, 1, 2, 3].map(() => ({ cv: document.createElement('canvas'), frames: [], busy: 0, src: undefined })), evId: 0 };
-function replaySize() { RP.bufs.forEach((B, a) => { const w = a === 0 ? 960 : 640; B.cv.width = w; B.cv.height = Math.round(w * H / W); B.frames = []; }); }
-function replayClear() { RP.bufs.forEach(B => B.frames = []); }
-function replayAngles() { const r = S.inputs.find(i => i.type === 'replay'); return r ? r.rp.angles : ['pgm', null, null, null]; }
+const RP_N = 8;
+const RP = { bufs: Array.from({ length: RP_N }, () => ({ cv: document.createElement('canvas'), frames: [], busy: 0, src: undefined, bytes: 0 })), evId: 0 };
+const RP_Q = { low: [640, 480], med: [960, 640], high: [1280, 960] }; // [1. açı, diğer açılar] genişlik
+function replaySize() { const q = RP_Q[S.settings.replayQuality] || RP_Q.med; RP.bufs.forEach((B, a) => { const w = a === 0 ? q[0] : q[1]; B.cv.width = w; B.cv.height = Math.round(w * H / W); B.frames = []; B.bytes = 0; }); }
+function replayMemMB() { let b = 0; RP.bufs.forEach(B => b += B.bytes); const seen = new Set(); S.inputs.forEach(i => i.rp?.events.forEach(ev => ev.clips.forEach(c => c.forEach(f => { if (!seen.has(f.b)) { seen.add(f.b); b += f.b.size; } })))); return b / 1048576; }
+function replayClear() { RP.bufs.forEach(B => { B.frames = []; B.bytes = 0; }); }
+function replayAngles() { const r = S.inputs.find(i => i.type === 'replay'); return r ? r.rp.angles : ['pgm', null, null, null, null, null, null, null]; }
 function replayAngleName(src) { return src === 'pgm' ? 'Program' : src == null ? null : (byId(src)?.name || null); }
 function replayCapture(t) {
   if (!S.settings.replayOn) return;
@@ -460,16 +574,18 @@ function replayCapture(t) {
     if (src === 'pgm') c.drawImage(prog, 0, 0, w, h);
     else { const inp = byId(src); if (!inp || !hasVideo(inp)) return; c.fillStyle = '#000'; c.fillRect(0, 0, w, h); drawContent(c, inp, 1, 0, 0, w, h, t, null); }
     B.busy++;
-    B.cv.toBlob(b => { B.busy--; if (!b) return; B.frames.push({ t, b }); while (B.frames.length && B.frames[0].t < lim) B.frames.shift(); }, 'image/jpeg', 0.8);
+    B.cv.toBlob(b => { B.busy--; if (!b) return; B.frames.push({ t, b }); B.bytes += b.size; while (B.frames.length && B.frames[0].t < lim) B.bytes -= B.frames.shift().b.size; }, 'image/jpeg', 0.8);
   });
 }
 function addReplay() {
   const inp = baseInput('replay', 'Anlık Tekrar');
   inp.el = document.createElement('canvas'); inp.el.width = W; inp.el.height = H;
   const first = !S.inputs.some(i => i.type === 'replay');
-  const cams = S.inputs.filter(i => i.type === 'camera' || i.type === 'screen').slice(0, 3).map(i => i.id);
-  inp.rp = { events: [], ev: null, angle: 0, quad: false, speed: 0.5, secs: 8, time: 0, last: [-1, -1, -1, -1], loading: [0, 0, 0, 0], bm: [null, null, null, null],
-    angles: first ? ['pgm', cams[0] ?? null, cams[1] ?? null, cams[2] ?? null] : ['pgm', null, null, null] };
+  const cams = S.inputs.filter(i => i.type === 'camera' || i.type === 'screen').slice(0, 7).map(i => i.id);
+  const N8 = () => Array(RP_N).fill(null);
+  inp.rp = { events: [], ev: null, angle: 0, quad: false, group: 0, speed: 0.5, secs: 8, time: 0, last: N8().map(() => -1), loading: N8().map(() => 0), bm: N8(),
+    inT: { type: 'fade', ms: 500 }, outT: { type: 'fade', ms: 500 }, autoReturn: false, returnTo: null,
+    angles: first ? ['pgm', ...Array.from({ length: RP_N - 1 }, (_, k) => cams[k] ?? null)] : ['pgm', ...Array(RP_N - 1).fill(null)] };
   inp.fit = 'stretch';
   drawReplayIdle(inp);
   return registerInput(inp);
@@ -492,23 +608,29 @@ function replayMark(inp) {
   toast(`${ev.name} yakalandı: son ${inp.rp.secs} sn, ${clips.filter(c => c.length).length} açı (${inp.rp.speed}x).`);
   return replayPlay(inp, ev);
 }
+function replayQuadSet(rp) { const g = rp.group ? 4 : 0; return [g, g + 1, g + 2, g + 3]; }
 function replayPlay(inp, ev) {
-  const rp = inp.rp; rp.ev = ev; rp.time = 0; rp.last = [-1, -1, -1, -1]; rp.loading = [0, 0, 0, 0];
-  rp.bm.forEach(b => b?.close?.()); rp.bm = [null, null, null, null];
+  const rp = inp.rp; rp.ev = ev; rp.time = 0; rp.last = Array(RP_N).fill(-1); rp.loading = Array(RP_N).fill(0); rp._returned = false;
+  rp.bm.forEach(b => b?.close?.()); rp.bm = Array(RP_N).fill(null);
   if (!ev.clips[rp.angle]?.length) rp.angle = Math.max(0, ev.clips.findIndex(c => c.length));
-  const need = rp.quad ? [0, 1, 2, 3] : [rp.angle];
+  const need = rp.quad ? replayQuadSet(rp) : [rp.angle];
   return Promise.all(need.filter(a => ev.clips[a]?.length).map(a => createImageBitmap(ev.clips[a][0].b).then(bm => { rp.bm[a] = bm; rp.last[a] = 0; }).catch(() => { })))
     .then(() => { replayRender(inp); return true; });
 }
-function replaySetAngle(inp, a) { const rp = inp.rp; rp.angle = a; rp.quad = false; rp.last = [-1, -1, -1, -1]; if (rp.ev && !rp.ev.clips[a]?.length) toast(`Bu olayda ${a + 1}. açı kaydı yok.`, true); renderInputs(); }
-function replayToggleQuad(inp) { inp.rp.quad = !inp.rp.quad; inp.rp.last = [-1, -1, -1, -1]; toast(`Tekrar: ${inp.rp.quad ? 'Quad View (4 açı)' : `${inp.rp.angle + 1}. açı`}`); renderInputs(); }
+function replaySetAngle(inp, a) { const rp = inp.rp; rp.angle = a; rp.quad = false; rp.last = Array(RP_N).fill(-1); if (rp.ev && !rp.ev.clips[a]?.length) toast(`Bu olayda ${a + 1}. açı kaydı yok.`, true); renderInputs(); }
+function replayToggleQuad(inp, group) {
+  const rp = inp.rp;
+  if (group != null) { rp.group = group; rp.quad = true; } else rp.quad = !rp.quad;
+  rp.last = Array(RP_N).fill(-1);
+  toast(`Tekrar: ${rp.quad ? `Quad View (açı ${rp.group ? '5–8' : '1–4'})` : `${rp.angle + 1}. açı`}`); renderInputs();
+}
 function replayRender(inp) {
   const c = inp.el.getContext('2d'), w = inp.el.width, h = inp.el.height, rp = inp.rp, s = h / 1080, ev = rp.ev;
   c.fillStyle = '#05070c'; c.fillRect(0, 0, w, h);
   c.textBaseline = 'middle';
   if (rp.quad) {
-    [0, 1, 2, 3].forEach(a => {
-      const x = (a % 2) * w / 2, y = (a >> 1) * h / 2;
+    replayQuadSet(rp).forEach((a, q) => {
+      const x = (q % 2) * w / 2, y = (q >> 1) * h / 2;
       if (rp.bm[a]) c.drawImage(rp.bm[a], x, y, w / 2, h / 2);
       else { c.fillStyle = '#5d667c'; c.textAlign = 'center'; c.font = `600 ${30 * s}px Segoe UI, Arial`; c.fillText('Açı kaydı yok', x + w / 4, y + h / 4); }
       const lb = `${a + 1}  ${ev?.names[a] || '—'}`; c.font = `800 ${26 * s}px Segoe UI, Arial`; const lw = c.measureText(lb).width + 30 * s;
@@ -531,8 +653,12 @@ function replayTick(dt) {
     if (inp.type !== 'replay' || !inp.rp.ev) continue;
     const rp = inp.rp, ev = rp.ev;
     rp.time += dt * rp.speed;
-    if (rp.time > ev.len + 400) { rp.time = 0; }
-    for (const a of rp.quad ? [0, 1, 2, 3] : [rp.angle]) {
+    if (rp.time > ev.len + 400) {
+      rp.time = 0;
+      // Çıkış geçişi: olay bir kez bitince canlı yayına geri dön
+      if (rp.autoReturn && !rp._returned && S.programId === inp.id && byId(rp.returnTo)) { rp._returned = true; quickTrans(rp.returnTo, rp.outT.type, rp.outT.ms); }
+    }
+    for (const a of rp.quad ? replayQuadSet(rp) : [rp.angle]) {
       const clip = ev.clips[a]; if (!clip?.length || rp.loading[a]) continue;
       let i = rp.last[a] < 0 ? 0 : rp.last[a];
       if (clip[i].t - ev.t0 > rp.time) i = 0;
@@ -553,6 +679,8 @@ function removeInput(id) {
   inp.stream?.getTracks().forEach(t => t.stop());
   const m = mediaEl(inp); if (m) { m.pause(); m.removeAttribute('src'); m.load(); }
   try { inp.a?.afvGain.disconnect(); } catch { }
+  if (inp.type === 'web') NOVA?.webClose?.(inp._webId);
+  if (inp.type === 'delay') inp._dl.frames = [];
   S.inputs = S.inputs.filter(i => i !== inp);
   S.overlays.forEach(o => { if (o.inputId === id) { o.inputId = null; o.on = false; o.alpha = 0; } });
   if (S.previewId === id) S.previewId = null;
@@ -594,6 +722,9 @@ function drawContent(ctx, inp, alpha, rx, ry, rw, rh, tNow, fitOverride) {
     else if (inp.type === 'studio') StudioRenderer.render(inp.el, inp, W, H, tNow / 1000);
     else if (inp.type === 'scene') renderScene(inp, tNow);
     else if (inp.type === 'photos') renderPhotos(inp, tNow);
+    else if (inp.type === 'web') renderWeb(inp);
+    else if (inp.type === 'delay') renderDelay(inp, tNow);
+    else if (inp.type === 'draw') renderDraw(inp);
     inp._rt = tNow;
   }
   let [sw, sh] = srcSize(inp);
@@ -701,6 +832,7 @@ function tick(e) {
   updateOnAir(t0);
   renderProgram(t0);
   replayCapture(t0);
+  delayCapture(t0);
   drawMain(vctx, S.previewId, pvw.width, pvw.height, t0);
   frame++; fpsCount++;
   if (frame % 3 === 0) drawThumbs(t0);
@@ -876,6 +1008,8 @@ function renderInputs() {
         ${isMedia ? `<button data-b="play" title="Oynat / Duraklat">⏯</button><button data-b="restart" title="Başa sar">⏮</button>` : ''}
         ${inp.list && inp.list.length > 1 ? `<button data-b="next" title="Listede sonraki">⏭</button>` : ''}
         ${inp.type === 'photos' ? `<button data-b="pprev" title="Önceki fotoğraf">⏮</button><button data-b="pnext" title="Sonraki fotoğraf">⏭</button>` : ''}
+        ${inp.type === 'web' ? `<button data-b="wreload" title="Sayfayı yenile">⟳</button>` : ''}
+        ${inp.type === 'draw' ? `<button data-b="dboard" title="Çizim tahtası">✎</button><button data-b="dclear" title="Çizimi temizle">🧹</button>` : ''}
         ${inp.triggers?.length ? `<button data-b="trg" class="trg" title="${inp.triggers.length} tetikleyici">⚡</button>` : ''}
         ${titleHasList(inp) ? `<button data-b="tprev" title="Önceki isim / satır">⏮</button><button data-b="tnext" title="Sonraki isim / satır (N)">⏭</button>` : ''}
         ${inp.type === 'replay' ? `<button data-b="mark" title="Son saniyeleri yakala (R)">⏺</button><button data-b="speed" title="Hız">${inp.rp.speed}x</button><button data-b="quad" class="${inp.rp.quad ? 'on' : ''}" title="Quad View: 4 açı birden (Q)">▦</button><button data-b="angle" title="Gösterilen açı (Alt+1…4)">A${inp.rp.angle + 1}</button>` : ''}
@@ -897,6 +1031,9 @@ function renderInputs() {
       else if (b === 'restart' && m) { m.currentTime = 0; }
       else if (b === 'next') nextInList(inp, 1, false);
       else if (b === 'pnext') photosNext(inp, 1);
+      else if (b === 'wreload') NOVA?.webReload ? NOVA.webReload(inp._webId) : toast('Web kaynağı masaüstü uygulamasında çalışır.', true);
+      else if (b === 'dboard') openInputSettings(inp.id, 'cizim');
+      else if (b === 'dclear') { inp.draw.strokes.length = 0; toast('Çizim temizlendi.'); }
       else if (b === 'pprev') photosNext(inp, -1);
       else if (b === 'trg') openInputSettings(inp.id, 'trig');
       else if (b === 'tnext') titleNext(inp, 1);
@@ -904,7 +1041,7 @@ function renderInputs() {
       else if (b === 'mark') replayMark(inp);
       else if (b === 'speed') { const sp = [0.25, 0.5, 0.75, 1]; inp.rp.speed = sp[(sp.indexOf(inp.rp.speed) + 1) % sp.length]; e.target.textContent = inp.rp.speed + 'x'; if (inp.rp.ev) replayRender(inp); }
       else if (b === 'quad') replayToggleQuad(inp);
-      else if (b === 'angle') replaySetAngle(inp, (inp.rp.angle + 1) % 4);
+      else if (b === 'angle') { const n = inp.rp.angles.length; let a = inp.rp.angle; for (let k = 0; k < n; k++) { a = (a + 1) % n; if (inp.rp.angles[a] != null || inp.rp.ev?.clips[a]?.length) break; } replaySetAngle(inp, a); }
       else if (b.startsWith('ov')) toggleOverlay(+b[2], inp.id);
       else if (b === 'set') openInputSettings(inp.id);
       else if (b === 'del') { if (inp.onAir) confirmBox(`"${inp.name}" şu an yayında. Yine de kapatılsın mı?`, () => removeInput(inp.id)); else removeInput(inp.id); }
@@ -939,7 +1076,7 @@ function markInputs() {
   });
   renderOverlays();
 }
-const HEAVY = new Set(['title', 'studio', 'scene', 'photos']);
+const HEAVY = new Set(['title', 'studio', 'scene', 'photos', 'draw']);
 let thumbTick = 0;
 function drawThumbs(t) {
   thumbTick++;
@@ -961,9 +1098,33 @@ function drawThumbs(t) {
   }
 }
 function replayFirst() { return S.inputs.find(i => i.type === 'replay') || addReplay(); }
+function replayGoLive(inp) { // tekrarı giriş geçişiyle yayına al
+  if (S.programId !== inp.id) inp.rp.returnTo = S.programId;
+  quickTrans(inp.id, inp.rp.inT.type, inp.rp.inT.ms);
+}
 function replayHotkey() {
   const inp = replayFirst();
-  replayMark(inp).then(ok => { if (ok) quickTrans(inp.id, 'fade', 400); });
+  replayMark(inp).then(ok => { if (ok) replayGoLive(inp); });
+}
+// Olayı video dosyası olarak dışa aktar (WebM, gerçek hızda)
+async function replayExport(inp, ev, angle) {
+  const clip = ev.clips[angle]; if (!clip?.length) return toast('Bu açıda kayıt yok.', true);
+  toast(`${ev.name} dışa aktarılıyor (${(ev.len / 1000).toFixed(1)} sn)…`);
+  const bm0 = await createImageBitmap(clip[0].b);
+  const cv = document.createElement('canvas'); cv.width = bm0.width; cv.height = bm0.height; const c = cv.getContext('2d'); c.drawImage(bm0, 0, 0); bm0.close();
+  const mime = ['video/webm;codecs=vp9', 'video/webm;codecs=vp8', 'video/webm'].find(m => MediaRecorder.isTypeSupported(m));
+  const rec = new MediaRecorder(cv.captureStream(30), { mimeType: mime, videoBitsPerSecond: 8e6 }); const parts = [];
+  rec.ondataavailable = e => e.data.size && parts.push(e.data);
+  const done = new Promise(r => rec.onstop = r); rec.start(250);
+  const t0 = clip[0].t, start = performance.now();
+  for (let i = 0; i < clip.length; i++) {
+    const wait = (clip[i].t - t0) - (performance.now() - start); if (wait > 0) await new Promise(r => setTimeout(r, wait));
+    const bm = await createImageBitmap(clip[i].b); c.drawImage(bm, 0, 0, cv.width, cv.height); bm.close();
+  }
+  await new Promise(r => setTimeout(r, 200)); rec.stop(); await done;
+  const blob = new Blob(parts, { type: 'video/webm' }), name = `NOVA_Tekrar_${ev.name.replace(/[^\wçğıöşüÇĞİÖŞÜ-]+/g, '_')}_aci${angle + 1}.webm`;
+  if (NOVA?.saveBuffer) { const dir = S.settings.folder || (S.settings.folder = await NOVA.defaultFolder()); const f = await NOVA.saveBuffer(dir, name, await blob.arrayBuffer()); toast('Tekrar kaydedildi: ' + f); }
+  else { const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = name; a.click(); }
 }
 function titleHasList(inp) { const f = inp.type === 'title' && TITLE_TEMPLATES[inp.title.template]?.fields; return !!f && (f.includes('items') || f.includes('lines')); }
 function titleNext(inp, dir) {
@@ -1185,7 +1346,7 @@ function modal(title, body, foot) {
   $('#modal-bg').classList.add('open');
   return b;
 }
-function closeModal() { $('#modal-bg').classList.remove('open'); $('#modal').innerHTML = ''; }
+function closeModal() { $('#modal-bg').classList.remove('open'); $('#modal').innerHTML = ''; $('#modal').className = 'modal'; }
 $('#modal-bg').addEventListener('mousedown', e => { if (e.target.id === 'modal-bg') closeModal(); });
 function confirmBox(msg, ok) { modal('Onay', `<p>${esc(msg)}</p>`, [['Vazgeç', () => { }], ['Evet', ok, true]]); }
 let toastT;
@@ -1197,9 +1358,7 @@ function toast(msg, err) {
 function esc(s) { return String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
 
 // ---------------------------------------------------------------- Kaynak ekleme menüsü
-$('#btn-add').addEventListener('click', e => { e.stopPropagation(); $('#add-menu').classList.toggle('open'); });
-document.addEventListener('click', () => $('#add-menu').classList.remove('open'));
-$('#add-menu').addEventListener('click', e => { const t = e.target.closest('button')?.dataset.add; if (t) addFlow(t); });
+$('#btn-add').addEventListener('click', () => openInputSelect());
 
 async function pickFiles(kind) {
   if (NOVA) return (await NOVA.openFiles(kind)).map(p => ({ path: p, name: baseName(p) }));
@@ -1325,6 +1484,9 @@ function openInputSettings(id, tab) {
   if (inp.type === 'studio') tabs.push(['studio', 'Stüdyo']);
   if (inp.type === 'scene') tabs.push(['sahne', 'Sahne Düzeni']);
   if (inp.type === 'photos') tabs.push(['foto', 'Fotoğraflar']);
+  if (inp.type === 'web') tabs.push(['web', 'Web Sayfası']);
+  if (inp.type === 'delay') tabs.push(['gecikme', 'Gecikme']);
+  if (inp.type === 'draw') tabs.push(['cizim', 'Çizim Tahtası']);
   if (hasVideo(inp)) tabs.push(['konum', 'Konum / Kırp'], ['renk', 'Renk']);
   if (['camera', 'video', 'screen', 'image'].includes(inp.type)) tabs.push(['chroma', 'Yeşil Perde']);
   tabs.push(['trig', `Tetikleyiciler${inp.triggers?.length ? ' (' + inp.triggers.length + ')' : ''}`]);
@@ -1460,6 +1622,17 @@ function openInputSettings(id, tab) {
       rng('Çerçeve kalınlığı', sc, 'border', 0, 20); txt('Çerçeve rengi', sc, 'borderColor', 'color');
       rng('Köşe yuvarlaklığı', sc, 'radius', 0, 80); chk('Gölge', sc, 'shadow');
       g.insertAdjacentHTML('beforeend', `<span></span><p class="note">Pencerelere kamera, ekran, video, resim veya stüdyo seçebilirsin. Sahneyi programa aldığında içindeki videolar oynar, sesleri (AFV) açılır.</p>`);
+    } else if (cur === 'web') {
+      const cfg = { ...inp.web };
+      buildWebConfig(g, cfg);
+      row('', `<button class="primary">Uygula ve yeniden yükle</button><button>Sadece yenile</button>`);
+      const [ap, rl] = g.lastElementChild.children;
+      ap.onclick = () => { inp.web = cfg; try { inp.name = new URL(cfg.url).hostname.replace(/^www\./, ''); } catch { } webApply(inp); renderInputs(); toast('Web sayfası yeniden açılıyor…'); };
+      rl.onclick = () => NOVA?.webReload?.(inp._webId);
+    } else if (cur === 'gecikme') {
+      buildDelayConfig(g, inp.delay, inp.id, () => { inp._dl.frames = []; inp._dl.shown = -1; const s = byId(inp.delay.src); if (s) { inp.name = `${s.name} (+${(inp.delay.ms / 1000).toFixed(1)} sn)`; renderInputs(); } });
+    } else if (cur === 'cizim') {
+      buildDrawBoard(g, inp);
     } else if (cur === 'foto') {
       const P = inp.photos;
       rng('Süre (sn)', P, 'interval', 1, 60, 0.5); rng('Geçiş (ms)', P, 'fade', 0, 3000, 50);
@@ -1537,21 +1710,12 @@ function openInputSettings(id, tab) {
       $('button.primary', g).onclick = async () => { const f = await pickFiles('video'); f.forEach(x => inp.list.push({ path: x.path || null, url: x.url || null, name: x.name })); renderInputs(); draw(); };
     } else if (cur === 'tekrar') {
       const rp = inp.rp;
-      row('Yakalanacak süre', `<select style="flex:1">${[5, 8, 10, 15, 20, 30].map(v => `<option ${rp.secs === v ? 'selected' : ''} value="${v}">Son ${v} saniye</option>`).join('')}</select>`);
-      g.lastElementChild.querySelector('select').onchange = e => rp.secs = +e.target.value;
-      row('Oynatma hızı', `<select style="flex:1">${[0.25, 0.5, 0.75, 1].map(v => `<option ${rp.speed === v ? 'selected' : ''} value="${v}">${v}x${v < 1 ? ' (yavaş çekim)' : ''}</option>`).join('')}</select>`);
-      g.lastElementChild.querySelector('select').onchange = e => { rp.speed = +e.target.value; renderInputs(); };
       const isFirst = S.inputs.find(i => i.type === 'replay') === inp;
-      const srcOpts = [['', '— Yok —'], ['pgm', 'Program çıkışı'], ...S.inputs.filter(i => hasVideo(i) && i.type !== 'replay').map(i => [String(i.id), `${i.n}. ${i.name}`])];
-      [0, 1, 2, 3].forEach(a => {
-        row(`Açı ${a + 1} kaynağı`, `<select style="flex:1" ${isFirst ? '' : 'disabled'}>${srcOpts.map(([v, n]) => `<option value="${v}" ${String(rp.angles[a] ?? '') === v ? 'selected' : ''}>${esc(n)}</option>`).join('')}</select>`);
-        g.lastElementChild.querySelector('select').onchange = e => { const v = e.target.value; rp.angles[a] = v === '' ? null : v === 'pgm' ? 'pgm' : +v; };
-      });
-      if (!isFirst) g.insertAdjacentHTML('beforeend', `<span></span><p class="note">Açı kaynakları ilk Anlık Tekrar kaynağından ayarlanır; bu kaynak aynı kayıtları kullanır.</p>`);
-      chk('Ek açıları 15 fps kaydet (daha az işlemci)', S.settings, 'replayExtraHalf');
-      row('Görünüm', `<button class="${rp.quad ? '' : 'primary'}">Tek açı</button><select>${[0, 1, 2, 3].map(a => `<option value="${a}" ${rp.angle === a ? 'selected' : ''}>Açı ${a + 1}</option>`).join('')}</select><button class="${rp.quad ? 'primary' : ''}">▦ Quad View</button>`);
-      const [b1, asel, b2] = g.lastElementChild.children;
-      b1.onclick = () => { rp.quad = false; rp.last = [-1, -1, -1, -1]; renderInputs(); draw(); }; asel.onchange = () => { replaySetAngle(inp, +asel.value); draw(); }; b2.onclick = () => { replayToggleQuad(inp); draw(); };
+      buildReplayConfig(g, rp, { isFirst, onChange: () => renderInputs() });
+      row('Görünüm', `<button class="${rp.quad ? '' : 'primary'}">Tek açı</button><select>${rp.angles.map((_, a) => `<option value="${a}" ${rp.angle === a ? 'selected' : ''}>Açı ${a + 1}</option>`).join('')}</select><button class="${rp.quad && !rp.group ? 'primary' : ''}">▦ Quad 1–4</button><button class="${rp.quad && rp.group ? 'primary' : ''}">▦ Quad 5–8</button>`);
+      const [b1, asel, b2, b3] = g.lastElementChild.children;
+      b1.onclick = () => { rp.quad = false; rp.last = Array(RP_N).fill(-1); renderInputs(); draw(); }; asel.onchange = () => { replaySetAngle(inp, +asel.value); draw(); };
+      b2.onclick = () => { replayToggleQuad(inp, 0); draw(); }; b3.onclick = () => { replayToggleQuad(inp, 1); draw(); };
       row('', '<button class="primary">⏺ Şimdi yakala (R)</button>'); g.lastElementChild.querySelector('button').onclick = () => replayMark(inp).then(() => draw());
       // Olay listesi + arama + çoklu etiket
       g.insertAdjacentHTML('beforeend', `<label>Olaylar (${rp.events.length})</label><div class="row"><input type="search" class="ev-q" placeholder="Olay / etiket ara…" style="flex:1" value="${esc(inp._evq || '')}"></div>`);
@@ -1565,11 +1729,12 @@ function openInputSettings(id, tab) {
             <input class="nm2" value="${esc(ev.name)}" title="Olay adı">
             <span class="note" style="margin:0">${ev.clock} • ${(ev.len / 1000).toFixed(1)} sn • ${ev.clips.filter(c => c.length).length} açı</span>
             <input class="tg" value="${esc(ev.tags.join(', '))}" placeholder="etiketler: gol, ofsayt…" title="Birden fazla etiket: virgülle ayır">
-            <button data-a="del" title="Sil">✕</button></div>`).join('') : `<p class="note">${rp.events.length ? 'Aramayla eşleşen olay yok.' : 'Henüz olay yok. R tuşu ya da ⏺ ile yakala.'}</p>`;
+            <button data-a="exp" title="Gösterilen açıyı video olarak dışa aktar">⤓</button><button data-a="del" title="Sil">✕</button></div>`).join('') : `<p class="note">${rp.events.length ? 'Aramayla eşleşen olay yok.' : 'Henüz olay yok. R tuşu ya da ⏺ ile yakala.'}</p>`;
       };
       qi.oninput = () => { inp._evq = qi.value; drawList(); };
       list.onclick = (e) => { const r = e.target.closest('[data-e]'); if (!r) return; const ev = rp.events.find(x => x.id === +r.dataset.e); const a = e.target.dataset.a;
-        if (a === 'play') { replayPlay(inp, ev); quickTrans(inp.id, 'fade', 400); drawList(); }
+        if (a === 'play') { replayPlay(inp, ev); replayGoLive(inp); drawList(); }
+        if (a === 'exp') replayExport(inp, ev, rp.angle);
         if (a === 'del') { rp.events = rp.events.filter(x => x !== ev); if (rp.ev === ev) { rp.ev = null; drawReplayIdle(inp); } drawList(); } };
       list.oninput = (e) => { const r = e.target.closest('[data-e]'); if (!r) return; const ev = rp.events.find(x => x.id === +r.dataset.e);
         if (e.target.classList.contains('nm2')) ev.name = e.target.value;
@@ -1754,8 +1919,9 @@ function serialize() {
     inputs: S.inputs.map(i => ({
       type: i.type, name: i.name, src: i.src, fit: i.fit, layout: i.layout, crop: i.crop, fx: i.fx, chroma: i.chroma,
       audio: { vol: i.audio.vol, muted: i.audio.muted, afv: i.audio.afv, comp: i.audio.comp, bus: i.audio.bus }, loop: i.loop, autoPlay: i.autoPlay, title: i.title,
-      list: i.list?.filter(x => x.path).map(x => ({ path: x.path, name: x.name })), rp: i.rp ? { speed: i.rp.speed, secs: i.rp.secs, quad: i.rp.quad, angle: i.rp.angle, angles: i.rp.angles.map(a => a === 'pgm' || a == null ? a : S.inputs.findIndex(x => x.id === a)) } : undefined,
-      studio: i.studio, go: i.go, color: i.color,
+      list: i.list?.filter(x => x.path || isNet(x.url)).map(x => ({ path: x.path, url: x.path ? undefined : x.url, name: x.name })), rp: i.rp ? { speed: i.rp.speed, secs: i.rp.secs, quad: i.rp.quad, group: i.rp.group, angle: i.rp.angle, inT: i.rp.inT, outT: i.rp.outT, autoReturn: i.rp.autoReturn, angles: i.rp.angles.map(a => a === 'pgm' || a == null ? a : S.inputs.findIndex(x => x.id === a)) } : undefined,
+      studio: i.studio, go: i.go, color: i.color, web: i.web, draw: i.draw,
+      delay: i.delay ? { ms: i.delay.ms, src: S.inputs.findIndex(x => x.id === i.delay.src) } : undefined,
       photos: i.photos ? { ...i.photos, list: i.photos.list.filter(x => x.path) } : undefined,
       triggers: i.triggers?.map(t => ({ ...t, target: t.target == null ? null : S.inputs.findIndex(x => x.id === t.target) })),
       scene: i.scene ? { ...i.scene, bg: S.inputs.findIndex(x => x.id === i.scene.bg), layers: i.scene.layers.map(l => ({ ...l, id: S.inputs.findIndex(x => x.id === l.id) })) } : undefined
@@ -1783,11 +1949,14 @@ async function openProject() {
   for (const d of p.inputs || []) {
     let inp = null;
     try {
-      if (d.type === 'camera') inp = await addCamera(d.src.deviceId, d.src.label);
-      else if (d.type === 'mic') inp = await addMic(d.src.deviceId, d.src.label);
+      if (d.type === 'camera') inp = await addCamera(d.src.deviceId, d.src.label, d.src.opts);
+      else if (d.type === 'mic') inp = await addMic(d.src.deviceId, d.src.label, d.src.opts);
       else if (d.type === 'screen') inp = await addScreen(d.src.sourceId, d.src.name, d.src.withAudio);
       else if (d.type === 'video' && d.list?.length) inp = addVideo(d.list[0], d.list.slice(1));
       else if (d.type === 'video' && d.src.path) inp = addVideo({ path: d.src.path });
+      else if (d.type === 'web') inp = addWeb(d.web);
+      else if (d.type === 'delay') { inp = addDelay(null, d.delay?.ms); inp._delaySrc = d.delay?.src; }
+      else if (d.type === 'draw') inp = addDraw(d.draw);
       else if (d.type === 'replay') { inp = addReplay(); const { angles, ...rest } = d.rp || {}; Object.assign(inp.rp, rest); inp._rpAngles = angles; }
       else if (d.type === 'image' && d.src.path) inp = addImage({ path: d.src.path });
       else if (d.type === 'audio' && d.src.path) inp = addAudioFile({ path: d.src.path });
@@ -1805,8 +1974,9 @@ async function openProject() {
     }
     made.push(inp);
   }
+  made.forEach(inp => { if (inp && inp._delaySrc != null) { inp.delay.src = made[inp._delaySrc]?.id ?? null; delete inp._delaySrc; } });
   made.forEach(inp => { if (inp?._trg) { inp.triggers = inp._trg.map(t => ({ ...t, target: t.target == null || t.target < 0 ? null : made[t.target]?.id ?? null })); delete inp._trg; } });
-  made.forEach(inp => { if (inp?._rpAngles) { inp.rp.angles = inp._rpAngles.map(a => a === 'pgm' || a == null ? a ?? null : made[a]?.id ?? null); delete inp._rpAngles; } });
+  made.forEach(inp => { if (inp?._rpAngles) { while (inp._rpAngles.length < RP_N) inp._rpAngles.push(null); inp.rp.angles = inp._rpAngles.map(a => a === 'pgm' || a == null ? a ?? null : made[a]?.id ?? null); delete inp._rpAngles; } });
   made.forEach(inp => { // sahne referanslarını yeni kimliklere çevir
     if (!inp?._sceneData) return; const d = inp._sceneData; delete inp._sceneData;
     Object.assign(inp.scene, d, { bg: made[d.bg]?.id ?? null, layers: d.layers.map(l => ({ ...l, id: made[l.id]?.id ?? null })) });
@@ -1869,9 +2039,11 @@ const ACTIONS = {
     <tr><td><kbd>Ctrl</kbd> + <kbd>F1</kbd> … <kbd>F8</kbd></td><td>Stinger 1–8 ile önizlemeye geç</td></tr>
     <tr><td><kbd>B</kbd></td><td>Siyaha karart (FTB)</td></tr>
     <tr><td><kbd>R</kbd></td><td>Anlık tekrar: son anları yakala (yeni olay) ve yayına al</td></tr>
-    <tr><td><kbd>Q</kbd> / <kbd>Alt</kbd>+<kbd>1</kbd>…<kbd>4</kbd></td><td>Tekrarda Quad View / gösterilen açıyı seç</td></tr>
+    <tr><td><kbd>Q</kbd> / <kbd>Shift</kbd>+<kbd>Q</kbd></td><td>Tekrarda Quad View aç/kapa / açı grubu 1–4 ↔ 5–8</td></tr>
+    <tr><td><kbd>Alt</kbd>+<kbd>1</kbd>…<kbd>8</kbd></td><td>Tekrarda gösterilen açı</td></tr>
     <tr><td><kbd>N</kbd> / <kbd>Shift</kbd>+<kbd>N</kbd></td><td>Yayındaki alt bantta sonraki / önceki isim, altyazıda sonraki satır</td></tr>
     <tr><td><kbd>Ctrl</kbd> + <kbd>R</kbd></td><td>Kayıt başlat/durdur</td></tr>
+    <tr><td><kbd>Ctrl</kbd> + <kbd>I</kbd></td><td>Kaynak ekle (Kaynak Seç penceresi)</td></tr>
     <tr><td><kbd>Ctrl</kbd> + <kbd>S</kbd></td><td>Projeyi kaydet</td></tr>
     <tr><td><kbd>Ctrl</kbd> + <kbd>O</kbd></td><td>Proje aç</td></tr>
     <tr><td><kbd>F12</kbd></td><td>Fotoğraf (PNG)</td></tr></table>`)
@@ -1891,11 +2063,12 @@ document.addEventListener('keydown', e => {
   else if (k === 'F12') { e.preventDefault(); snapshot(); }
   else if (k.toLowerCase() === 'b' && !e.ctrlKey) ACTIONS.ftb();
   else if (k.toLowerCase() === 'r' && !e.ctrlKey) replayHotkey();
-  else if (k.toLowerCase() === 'q' && !e.ctrlKey) { const r = S.inputs.find(i => i.type === 'replay'); if (r) replayToggleQuad(r); }
-  else if (e.altKey && /^Digit[1-4]$/.test(e.code)) { e.preventDefault(); const r = S.inputs.find(i => i.type === 'replay'); if (r) replaySetAngle(r, +e.code.slice(-1) - 1); }
+  else if (k.toLowerCase() === 'q' && !e.ctrlKey) { const r = S.inputs.find(i => i.type === 'replay'); if (r) e.shiftKey ? replayToggleQuad(r, r.rp.group ? 0 : 1) : replayToggleQuad(r); }
+  else if (e.altKey && /^Digit[1-8]$/.test(e.code)) { e.preventDefault(); const r = S.inputs.find(i => i.type === 'replay'); if (r) replaySetAngle(r, +e.code.slice(-1) - 1); }
   else if (k.toLowerCase() === 'n' && !e.ctrlKey) { const on = S.inputs.filter(i => i.onAir && titleHasList(i) && titleItemCount(i.title)); on.forEach(i => titleNext(i, e.shiftKey ? -1 : 1)); if (!on.length) toast('Yayında isim listeli grafik yok.', true); }
   else if (e.ctrlKey && k.toLowerCase() === 's') { e.preventDefault(); saveProject(e.shiftKey); }
   else if (e.ctrlKey && k.toLowerCase() === 'o') { e.preventDefault(); openProject(); }
+  else if (e.ctrlKey && k.toLowerCase() === 'i') { e.preventDefault(); openInputSelect(); }
   else if (e.ctrlKey && k.toLowerCase() === 'r') { e.preventDefault(); toggleRecord(); }
   else {
     const m = /^(Digit|Numpad)([1-9])$/.exec(e.code);
@@ -1960,5 +2133,5 @@ if (NOVA?.onUpdateStatus) NOVA.onUpdateStatus((st, d) => {
   $('.credit').textContent = `NOVA Canlı v${APP_VERSION} • Samet Şahin (@xsametsahinx)`;
   if (S.settings.autoUpdate !== false) { setTimeout(() => checkUpdates(false), 6000); setInterval(() => { if (S.settings.autoUpdate !== false && UPD.st !== 'ready') checkUpdates(false); }, 3 * 3600 * 1000); }
   toast('NOVA Canlı hazır. "+ Kaynak Ekle" ile başla.');
-  window.__nova = { addPhotos, stingerTo, runTrigger, fireTriggers, replayToggleQuad, replaySetAngle, replayPlay, goAction, BUS, addStudio, addScene, applyScenePreset, titleNext, pickTitle, pickStudio, pickScene, openInputSettings, addReplay, replayMark, replayHotkey, RP, S, cut, transition, toggleOverlay, startOutput, stopOutput, addTitle, addColor, addVideo, addImage, outState, prog }; // test erişimi
+  window.__nova = { addWeb, addDelay, addDraw, replayExport, replayGoLive, openInputSelect: (...a) => openInputSelect(...a), addPhotos, stingerTo, runTrigger, fireTriggers, replayToggleQuad, replaySetAngle, replayPlay, goAction, BUS, addStudio, addScene, applyScenePreset, titleNext, pickTitle, pickStudio, pickScene, openInputSettings, addReplay, replayMark, replayHotkey, RP, S, cut, transition, toggleOverlay, startOutput, stopOutput, addTitle, addColor, addVideo, addImage, outState, prog }; // test erişimi
 })();

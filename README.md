@@ -23,7 +23,8 @@ Geliştirici: **Samet Şahin (@xsametsahinx)**
 
 | Bölüm | Neler var |
 |---|---|
-| Kaynaklar | Kamera / yakalama kartı, ekran / pencere / oyun yakalama (+ sistem sesi), video ve **oynatma listesi**, resim/logo, **fotoğraf slayt gösterisi**, renk & degrade arka plan, mikrofon, müzik dosyası, **anlık tekrar**. Sürükle-bırak ile ekleme. |
+| Kaynak Seç penceresi | vMix tarzı: solda 18 kaynak türü, sağda ayarlar (kamera önizlemesi, çözünürlük/fps, ses aygıtı…), **Numara** ile sıraya ekleme, Ctrl+I. |
+| Kaynaklar | **Web tarayıcı**, **video gecikmesi**, **telestratör (çizim)**, ağ videosu (URL), Kamera / yakalama kartı, ekran / pencere / oyun yakalama (+ sistem sesi), video ve **oynatma listesi**, resim/logo, **fotoğraf slayt gösterisi**, renk & degrade arka plan, mikrofon, müzik dosyası, **anlık tekrar**. Sürükle-bırak ile ekleme. |
 | Önizleme / Program | vMix tarzı iki monitör. KES, OTOMATİK, T-bar ile elle geçiş, 4 hızlı geçiş butonu, FTB (siyaha karart). |
 | Stinger (8) | 7 hazır animasyonlu stinger + kendi stinger videon (saydam WebM), süre ve kesme noktası ayarı, Ctrl+F1–F8. |
 | Kaynak kartı | Kapat (✕), döngü (⟲), ayarlanabilir **GO** düğmesi, renk kategorisi, isim/renk ile arama-filtre. |
@@ -34,7 +35,7 @@ Geliştirici: **Samet Şahin (@xsametsahinx)**
 | İsim listesi & altyazı | Alt bantlara çok sayıda isim (`Ad \| Unvan`), `N` ile sıradaki. Altyazı: satır satır ya da **SRT/VTT** ile zamanlı. |
 | Sanal stüdyo (11) | Hareketli arka planlar: haber, talk show, oyun/neon, teknoloji, podcast, stadyum, konser, dalgalar, parçacıklar, uzay, kurumsal. |
 | Sahne / çoklu görüntü | PIP, yan yana, 2x2, 1+2, üçlü, haber, röportaj, oyun yayını düzenleri; çerçeve, köşe, gölge, stüdyo arka planı. |
-| Anlık tekrar | 4 açıya kadar (Program + kameralar) son 15–60 sn hafızada; `R` ile olay yakala, olaylara etiket ver ve ara, **Quad View** (4 açı), 0.25x–1x yavaş çekim. |
+| Anlık tekrar | **8 kameraya** kadar, kalite seçimi, giriş/çıkış geçişi, olay bitince canlıya dönüş, olayı videoya aktarma;  (Program + kameralar) son 15–60 sn hafızada; `R` ile olay yakala, olaylara etiket ver ve ara, **Quad View** (4 açı), 0.25x–1x yavaş çekim. |
 | Görüntü | Konum/boyut, kırpma, sığdır/doldur/esnet, parlaklık-kontrast-doygunluk, opaklık, ayna, **yeşil perde (GPU chroma key)**. |
 | Ses mikseri | Kanal başına fader, sustur, AFV, kompresör, VU metreler; **Master + Bus A + Bus B** yönlendirme, yayın/kayıt/kulaklık için ayrı bus. |
 | Yayın | RTMP/RTMPS: YouTube, Twitch, Kick, Facebook, Instagram, TikTok, özel sunucu. **Aynı anda çoklu platform.** |
@@ -45,7 +46,7 @@ Geliştirici: **Samet Şahin (@xsametsahinx)**
 
 ## ⌨️ Kısayollar
 
-`Enter` Kes • `Boşluk` Otomatik geçiş • `1–9` Önizlemeye al • `Shift+1–9` Direkt programa • `Ctrl+1–9` Hızlı geçiş • `F1–F8` Overlay • `Ctrl+F1–F8` Stinger • `Q` Tekrar Quad • `Alt+1–4` Tekrar açısı • `B` FTB • `R` Anlık tekrar • `N` / `Shift+N` Sonraki / önceki isim • `Ctrl+R` Kayıt • `Ctrl+S` Kaydet • `Ctrl+O` Aç • `F12` Fotoğraf
+`Enter` Kes • `Boşluk` Otomatik geçiş • `1–9` Önizlemeye al • `Shift+1–9` Direkt programa • `Ctrl+1–9` Hızlı geçiş • `F1–F8` Overlay • `Ctrl+F1–F8` Stinger • `Q` Tekrar Quad • `Alt+1–4` Tekrar açısı • `B` FTB • `R` Anlık tekrar • `N` / `Shift+N` Sonraki / önceki isim • `Ctrl+R` Kayıt • `Ctrl+I` Kaynak ekle • `Ctrl+S` Kaydet • `Ctrl+O` Aç • `F12` Fotoğraf
 
 ## 🛠️ Kaynak koddan çalıştırma
 

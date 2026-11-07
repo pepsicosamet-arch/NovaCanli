@@ -2,7 +2,7 @@
 <html lang="tr">
 <head>
 <meta charset="utf-8">
-<meta http-equiv="Content-Security-Policy" content="default-src 'self' nova: blob: data: mediastream:; img-src 'self' nova: blob: data:; media-src 'self' nova: blob: data: mediastream:; style-src 'self' 'unsafe-inline'; script-src 'self'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self' nova: blob: data: mediastream:; img-src 'self' nova: blob: data:; media-src 'self' nova: blob: data: mediastream: https: http:; style-src 'self' 'unsafe-inline'; script-src 'self'">
 <title>NOVA Canlı</title>
 <link rel="stylesheet" href="css/style.css">
 </head>
@@ -81,23 +81,7 @@
   <div class="inputs-wrap">
     <div class="sec-head">
       <b>KAYNAKLAR</b>
-      <div class="add-wrap">
-        <button class="primary" id="btn-add">+ Kaynak Ekle</button>
-        <div class="add-menu" id="add-menu">
-          <button data-add="camera">Kamera / Yakalama Kartı</button>
-          <button data-add="screen">Ekran / Pencere / Oyun</button>
-          <button data-add="video">Video / Oynatma Listesi</button>
-          <button data-add="image">Resim / Logo</button>
-          <button data-add="photos">Fotoğraf Slayt Gösterisi</button>
-          <button data-add="color">Renk / Arka Plan</button>
-          <button data-add="title">Grafik / Alt Bant / Altyazı (33 şablon)</button>
-          <button data-add="studio">Sanal Stüdyo (hareketli arka plan)</button>
-          <button data-add="scene">Sahne / Çoklu Görüntü (PIP, yan yana, 2x2)</button>
-          <button data-add="mic">Mikrofon / Ses Girişi</button>
-          <button data-add="audio">Ses / Müzik Dosyası</button>
-          <button data-add="replay">Anlık Tekrar (Yavaş Çekim)</button>
-        </div>
-      </div>
+      <button class="primary" id="btn-add" title="Kaynak Seç (Ctrl+I)">+ Kaynak Ekle</button>
       <input id="inp-search" type="search" placeholder="Kaynak ara…" autocomplete="off">
       <div class="cat-filter" id="cat-filter"></div>
       <span class="hint">Tıkla: Önizleme • Çift tıkla: Ayarlar</span>
@@ -127,5 +111,6 @@
 <script src="js/studio.js"></script>
 <script src="js/stingers.js"></script>
 <script src="js/app.js"></script>
+<script src="js/inputselect.js"></script>
 </body>
 </html>

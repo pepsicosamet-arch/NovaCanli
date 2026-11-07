@@ -1,6 +1,6 @@
 // NOVA Canlı - Ana süreç (Electron)
 // Samet Şahin (@xsametsahinx)
-const { app, BrowserWindow, ipcMain, desktopCapturer, dialog, shell, screen, session, protocol } = require('electron');
+const { app, BrowserWindow, ipcMain, desktopCapturer, dialog, shell, screen, session, protocol, net } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const { Readable } = require('stream');
@@ -52,6 +52,12 @@ function registerProtocol() {
   protocol.handle('nova', (req) => {
     const u = new URL(req.url);
     if (u.pathname === '/__media') return serveFile(u.searchParams.get('p'), req);
+    if (u.pathname === '/__url') { // ağ videosu: aynı kökenden sun ki yayın/kayıt tuvali kirlenmesin
+      const target = u.searchParams.get('u') || '';
+      if (!/^https?:\/\//i.test(target)) return new Response('Yasak', { status: 403 });
+      const headers = {}; const range = req.headers.get('range'); if (range) headers.Range = range;
+      return net.fetch(target, { headers }).catch(err => new Response(String(err.message || err), { status: 502 }));
+    }
     let rel = decodeURIComponent(u.pathname).replace(/^\/+/, '') || 'index.html';
     const file = path.normalize(path.join(root, rel));
     if (!file.startsWith(root)) return new Response('Yasak', { status: 403 });
@@ -108,6 +114,7 @@ function createWindow() {
     return { action: 'deny' };
   });
 
+  win.on('closed', () => { for (const w of webSources.values()) if (!w.isDestroyed()) w.destroy(); webSources.clear(); win = null; });
   win.on('close', (e) => {
     if (outputs.stream || outputs.record) {
       const r = dialog.showMessageBoxSync(win, {
@@ -179,6 +186,41 @@ ipcMain.handle('default-folder', () => {
 });
 ipcMain.handle('open-folder', (e, dir) => shell.openPath(dir));
 ipcMain.handle('open-url', (e, url) => { if (/^https:\/\//.test(url)) shell.openExternal(url); });
+
+ipcMain.handle('save-buffer', (e, dir, name, buf) => {
+  fs.mkdirSync(dir, { recursive: true });
+  const file = path.join(dir, path.basename(String(name)).replace(/[<>:"/\\|?*]+/g, '_'));
+  fs.writeFileSync(file, Buffer.from(buf));
+  return file;
+});
+
+// ---------- Web Tarayıcı kaynakları (görünmez, ekran dışı çizim) ----------
+const webSources = new Map();
+function sendWeb(...a) { if (win && !win.isDestroyed()) win.webContents.send(...a); }
+ipcMain.handle('web-open', (e, id, cfg) => {
+  if (!/^https?:\/\//i.test(String(cfg.url || ''))) { sendWeb('web-event', id, 'fail', 'Adres http:// veya https:// ile başlamalı'); return false; }
+  const w = new BrowserWindow({
+    show: false, frame: false, width: Math.round(cfg.w || 1280), height: Math.round(cfg.h || 720),
+    transparent: !!cfg.transparent, backgroundColor: cfg.transparent ? '#00000000' : '#ffffff',
+    webPreferences: { offscreen: true, sandbox: true, contextIsolation: true, nodeIntegration: false, backgroundThrottling: false, partition: 'persist:nova-web' }
+  });
+  const wc = w.webContents;
+  wc.setFrameRate(Math.max(1, Math.min(60, Number(cfg.fps) || 30)));
+  wc.setAudioMuted(!cfg.audio);
+  wc.setWindowOpenHandler(() => ({ action: 'deny' }));
+  wc.on('paint', (ev, dirty, image) => { const sz = image.getSize(); sendWeb('web-frame', id, sz.width, sz.height, image.toBitmap()); });
+  wc.on('did-fail-load', (ev, code, desc, url, isMain) => { if (isMain && code !== -3) sendWeb('web-event', id, 'fail', desc); });
+  wc.on('page-title-updated', (ev, title) => sendWeb('web-event', id, 'title', title));
+  wc.on('did-finish-load', () => {
+    if (cfg.transparent) wc.insertCSS('html, body { background-color: rgba(0,0,0,0) !important; margin: 0; overflow: hidden; }').catch(() => { });
+    if (cfg.css) wc.insertCSS(String(cfg.css)).catch(() => { });
+  });
+  w.loadURL(cfg.url).catch(() => { });
+  webSources.set(id, w);
+  return true;
+});
+ipcMain.handle('web-close', (e, id) => { const w = webSources.get(id); webSources.delete(id); if (w && !w.isDestroyed()) w.destroy(); return true; });
+ipcMain.handle('web-reload', (e, id) => { const w = webSources.get(id); if (w && !w.isDestroyed()) w.webContents.reloadIgnoringCache(); return true; });
 
 // ---------- Güncelleme ----------
 let updaterWired = false;
