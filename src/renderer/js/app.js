@@ -12,6 +12,17 @@ const DEFAULTS = {
   recMode: 'copy', format: 'mp4', recbitrate: 12000, folder: '',
   transType: 'fade', transMs: 600, monitor: true, autoPause: true,
   replayOn: true, replaySecs: 30, autoUpdate: true,
+  recBus: 'M', monBus: 'M', streamBus: 'M', replayExtraHalf: true,
+  stingers: [
+    { kind: 'builtin', style: 'serit', color: '#ff2d4b', dur: 1000, cut: 500 },
+    { kind: 'builtin', style: 'logo', color: '#7b3cff', dur: 1200, cut: 600 },
+    { kind: 'builtin', style: 'perde', color: '#4c8dff', dur: 1000, cut: 500 },
+    { kind: 'builtin', style: 'murekkep', color: '#19c37d', dur: 1100, cut: 550 },
+    { kind: 'builtin', style: 'kare', color: '#ffb020', dur: 1000, cut: 500 },
+    { kind: 'builtin', style: 'isik', color: '#ffffff', dur: 800, cut: 400 },
+    { kind: 'builtin', style: 'kaydir', color: '#ff5ea8', dur: 700, cut: 350 },
+    null
+  ],
   targets: [
     { name: 'YouTube', url: 'rtmp://a.rtmp.youtube.com/live2', key: '', enabled: true },
     { name: 'Twitch', url: 'rtmp://live.twitch.tv/app', key: '', enabled: false },
@@ -28,16 +39,17 @@ const PLATFORMS = {
   'TikTok': 'rtmp://push.tiktokcdn.com/live',
   'Özel': ''
 };
-const TR_NAMES = { cut: 'Kes', fade: 'Geçiş', dip: 'Siyah', dipw: 'Beyaz', wipe: 'Silme', slide: 'Kaydır', push: 'İt', zoom: 'Yakınlaş', circle: 'Daire' };
-const APP_VERSION = '1.2.0';
+const TR_NAMES = { cut: 'Kes', fade: 'Geçiş', alphafade: 'AlfaGeçiş', dip: 'Siyah', dipw: 'Beyaz', wipe: 'Silme', slide: 'Kaydır', push: 'İt', zoom: 'Yakınlaş', circle: 'Daire' };
+const APP_VERSION = '1.3.0';
 const GITHUB_URL = 'https://github.com/pepsicosamet-arch/NovaCanli';
-const TYPE_NAMES = { studio: 'STÜDYO', scene: 'SAHNE', replay: 'TEKRAR', camera: 'KAMERA', screen: 'EKRAN', video: 'VİDEO', image: 'RESİM', color: 'RENK', title: 'GRAFİK', mic: 'MİKROFON', audio: 'SES' };
+const TYPE_NAMES = { photos: 'FOTO', studio: 'STÜDYO', scene: 'SAHNE', replay: 'TEKRAR', camera: 'KAMERA', screen: 'EKRAN', video: 'VİDEO', image: 'RESİM', color: 'RENK', title: 'GRAFİK', mic: 'MİKROFON', audio: 'SES' };
 
 let S = {
   settings: structuredClone(DEFAULTS),
   inputs: [], nextId: 1,
   previewId: null, programId: null,
-  overlays: [0, 1, 2, 3].map(() => ({ inputId: null, on: false, alpha: 0 })),
+  overlays: [0, 1, 2, 3, 4, 5, 6, 7].map(() => ({ inputId: null, on: false, alpha: 0 })),
+  filter: { q: '', cat: null },
   trans: null, ftb: { on: false, alpha: 0 },
   projectFile: null
 };
@@ -56,7 +68,7 @@ function applyResolution() {
   W = Number(S.settings.width) || 1920; H = Number(S.settings.height) || 1080;
   prog.width = bufA.width = bufB.width = W; prog.height = bufA.height = bufB.height = H;
   pvw.width = Math.round(W / 2); pvw.height = Math.round(H / 2);
-  replaySize(); RP.frames = [];
+  replaySize();
   S.inputs?.forEach(i => { if (i.type === 'replay') { i.el.width = W; i.el.height = H; drawReplayIdle(i); } });
   $('#st-res').textContent = `${H}p${S.settings.fps}`;
   startTicker();
@@ -69,10 +81,22 @@ const masterAnalyser = AC.createAnalyser(); masterAnalyser.fftSize = 1024;
 const audioDest = AC.createMediaStreamDestination();
 const monitorGain = AC.createGain();
 masterGain.connect(masterAnalyser); masterAnalyser.connect(audioDest);
-masterAnalyser.connect(monitorGain); monitorGain.connect(AC.destination);
+monitorGain.connect(AC.destination);
 // Sessiz de olsa her zaman bir ses izi olsun (ffmpeg için)
 const silent = AC.createConstantSource(); silent.offset.value = 0; silent.connect(audioDest); silent.start();
 const master = { vol: 1, muted: false };
+// Ses bus'ları (vMix tarzı): her kanal Master / A / B'ye ayrı ayrı yönlendirilebilir
+const BUS = {};
+for (const k of ['A', 'B']) {
+  const gain = AC.createGain(), an = AC.createAnalyser(); an.fftSize = 1024;
+  const dest = AC.createMediaStreamDestination();
+  gain.connect(an); an.connect(dest); silent.connect(dest);
+  BUS[k] = { gain, an, dest, vol: 1, muted: false };
+}
+const monSel = { M: AC.createGain(), A: AC.createGain(), B: AC.createGain() };
+masterAnalyser.connect(monSel.M); BUS.A.an.connect(monSel.A); BUS.B.an.connect(monSel.B);
+Object.values(monSel).forEach(g => g.connect(monitorGain));
+function busDest(k) { return k === 'A' || k === 'B' ? BUS[k].dest : audioDest; }
 const resumeAudio = () => { if (AC.state !== 'running') AC.resume(); };
 document.addEventListener('pointerdown', resumeAudio);
 document.addEventListener('keydown', resumeAudio);
@@ -82,8 +106,13 @@ function setupAudio(inp, node) {
   const gain = AC.createGain();
   const analyser = AC.createAnalyser(); analyser.fftSize = 1024;
   const afvGain = AC.createGain();
-  node.connect(comp); comp.connect(gain); gain.connect(analyser); analyser.connect(afvGain); afvGain.connect(masterGain);
-  inp.a = { node, comp, gain, analyser, afvGain, peak: 0, hold: 0 };
+  const route = { M: AC.createGain(), A: AC.createGain(), B: AC.createGain() };
+  node.connect(comp); comp.connect(gain); gain.connect(analyser); analyser.connect(afvGain);
+  afvGain.connect(route.M); route.M.connect(masterGain);
+  afvGain.connect(route.A); route.A.connect(BUS.A.gain);
+  afvGain.connect(route.B); route.B.connect(BUS.B.gain);
+  if (!inp.audio.bus) inp.audio.bus = { M: true, A: false, B: false };
+  inp.a = { node, comp, gain, analyser, afvGain, route, peak: 0, hold: 0 };
   applyComp(inp);
   updateAudioGains(inp, true);
 }
@@ -94,6 +123,8 @@ function updateAudioGains(inp, instant) {
   const afv = inp.audio.afv ? (inp.onAir ? 1 : 0) : 1;
   inp.a.gain.gain.setTargetAtTime(v, t, instant ? 0.001 : 0.03);
   inp.a.afvGain.gain.setTargetAtTime(afv, t, instant ? 0.001 : 0.08);
+  const b = inp.audio.bus || { M: true };
+  for (const k of ['M', 'A', 'B']) inp.a.route[k].gain.setTargetAtTime(b[k] ? 1 : 0, t, 0.02);
 }
 // Kompresör: kapalıyken etkisiz (oran 1), açıkken konuşmayı dengeler
 function applyComp(inp) {
@@ -106,6 +137,9 @@ function applyComp(inp) {
 }
 function updateMaster() {
   masterGain.gain.setTargetAtTime(master.muted ? 0 : master.vol, AC.currentTime, 0.03);
+  for (const k of ['A', 'B']) BUS[k].gain.gain.setTargetAtTime(BUS[k].muted ? 0 : BUS[k].vol, AC.currentTime, 0.03);
+  const mb = S.settings.monBus || 'M';
+  for (const k of ['M', 'A', 'B']) monSel[k].gain.setTargetAtTime(mb === k ? 1 : 0, AC.currentTime, 0.02);
   monitorGain.gain.setTargetAtTime(S.settings.monitor ? 1 : 0, AC.currentTime, 0.03);
 }
 
@@ -178,7 +212,7 @@ function addVideo(file, more) { // file: {path} veya {url,name}; more: listeye e
   inp.src = { path: file.path || null };
   const v = mkVideo(); v.preload = 'auto';
   v.addEventListener('error', () => { if (v.getAttribute('src')) toast(`Video açılamadı: ${inp.list[inp.idx]?.name} (MP4/H.264 önerilir)`, true); });
-  v.addEventListener('ended', () => nextInList(inp, 1, true));
+  v.addEventListener('ended', () => { if (inp.idx >= inp.list.length - 1 && !inp.loop) fireTriggers(inp, 'onEnd'); nextInList(inp, 1, true); });
   inp.el = v;
   setupAudio(inp, AC.createMediaElementSource(v));
   loadListItem(inp, 0, false);
@@ -202,7 +236,10 @@ function nextInList(inp, dir, auto) {
   if (n < 0) n = inp.list.length - 1;
   loadListItem(inp, n, auto || !inp.el.paused);
 }
-function cardName(inp) { return inp.list && inp.list.length > 1 ? `${inp.name}  (${inp.idx + 1}/${inp.list.length})` : inp.name; }
+function cardName(inp) {
+  if (inp.type === 'photos') return `${inp.name}  (${inp.photos.list.length ? inp.photos.idx + 1 : 0}/${inp.photos.list.length})`;
+  return inp.list && inp.list.length > 1 ? `${inp.name}  (${inp.idx + 1}/${inp.list.length})` : inp.name;
+}
 
 function addImage(file) {
   const inp = baseInput('image', file.name || baseName(file.path));
@@ -228,6 +265,110 @@ function addTitle(template = 'altbant', data) {
   return registerInput(inp);
 }
 
+// ---- Fotoğraf slayt gösterisi (vMix Photos)
+function addPhotos(files, opts) {
+  const inp = baseInput('photos', 'Slayt Gösterisi');
+  inp.photos = Object.assign({ list: files.map(f => ({ path: f.path || null, url: f.url || null, name: f.name || baseName(f.path) })), idx: 0, interval: 5, fade: 800, shuffle: false, fit: 'cover', kenburns: true }, opts || {});
+  inp.loop = true; inp.fit = 'stretch';
+  inp.el = document.createElement('canvas'); inp.el.width = W; inp.el.height = H;
+  inp._ph = { imgs: new Map(), prev: null, since: performance.now() };
+  return registerInput(inp);
+}
+function photoImg(inp, i) {
+  const it = inp.photos.list[i]; if (!it) return null;
+  const key = it.path || it.url; let m = inp._ph.imgs.get(key);
+  if (!m) {
+    m = new Image(); m.decoding = 'async'; m.src = it.path ? mediaUrl(it.path) : it.url; inp._ph.imgs.set(key, m);
+    if (inp._ph.imgs.size > 8) inp._ph.imgs.delete(inp._ph.imgs.keys().next().value); // bellek: son 8 fotoğraf
+  }
+  return m;
+}
+function photosNext(inp, dir, auto) {
+  const P = inp.photos, n = P.list.length; if (!n) return;
+  let i;
+  if (P.shuffle && n > 1 && dir > 0) { do i = Math.floor(Math.random() * n); while (i === P.idx); }
+  else i = P.idx + dir;
+  if (i >= n) { if (auto && !inp.loop) { fireTriggers(inp, 'onEnd'); return; } i = 0; }
+  if (i < 0) i = n - 1;
+  inp._ph.prev = P.idx; P.idx = i; inp._ph.since = performance.now();
+  photoImg(inp, (i + 1) % n); // sıradakini önceden yükle
+  const nm = $(`#inputs .inp[data-id="${inp.id}"] .nm`); if (nm) nm.textContent = cardName(inp);
+}
+function renderPhotos(inp, t) {
+  const c = inp.el; if (c.width !== W || c.height !== H) { c.width = W; c.height = H; }
+  const x = c.getContext('2d'), P = inp.photos, ph = inp._ph, n = P.list.length;
+  x.fillStyle = '#000'; x.fillRect(0, 0, W, H);
+  if (!n) { x.fillStyle = '#8a93a8'; x.font = `600 ${H / 22}px Segoe UI, Arial`; x.textAlign = 'center'; x.textBaseline = 'middle'; x.fillText('Ayarlardan fotoğraf ekle', W / 2, H / 2); return; }
+  if (P.idx >= n) P.idx = 0;
+  if (inp.onAir && n > 1 && t - ph.since > P.interval * 1000) photosNext(inp, 1, true);
+  const k = Math.min(1, (t - ph.since) / Math.max(1, P.fade));
+  const draw = (img, a, since) => {
+    if (!img || !img.complete || !img.naturalWidth) return;
+    const iw = img.naturalWidth, ih = img.naturalHeight;
+    let s = P.fit === 'contain' ? Math.min(W / iw, H / ih) : Math.max(W / iw, H / ih);
+    if (P.kenburns) s *= 1 + 0.07 * Math.min(1, (t - since) / ((P.interval * 1000 + P.fade) || 1));
+    x.globalAlpha = a; x.drawImage(img, (W - iw * s) / 2, (H - ih * s) / 2, iw * s, ih * s); x.globalAlpha = 1;
+  };
+  if (ph.prev != null && k < 1) draw(photoImg(inp, ph.prev), 1, ph.since - P.interval * 1000);
+  draw(photoImg(inp, P.idx), ph.prev != null ? k : 1, ph.since);
+}
+
+// ---- Tetikleyiciler (vMix Triggers): bir olay olunca otomatik eylem
+const TRIG_EVENTS = { onIn: 'Yayına girince', onOut: 'Yayından çıkınca', onEnd: 'Video / liste / slayt bitince', cdEnd: 'Geri sayım bitince', cdLeft: 'Geri sayımda … sn kala' };
+const TRIG_ACTIONS = {
+  cut: 'Kaynağa kes', fade: 'Kaynağa geçiş (Fade)', auto: 'Kaynağa varsayılan geçiş', stinger: 'Stinger ile kaynağa geç',
+  ovOn: 'Overlay aç', ovOff: 'Overlay kapat', ovToggle: 'Overlay aç/kapa',
+  play: 'Oynat', pause: 'Duraklat', restart: 'Başa sar', next: 'Listede sonraki',
+  recStart: 'Kaydı başlat', recStop: 'Kaydı durdur', streamStart: 'Yayını başlat', streamStop: 'Yayını durdur',
+  ftbOn: 'Siyaha karart', ftbOff: 'Karartmayı kaldır', replay: 'Anlık tekrar yakala'
+};
+function trigEventsFor(inp) {
+  const e = ['onIn', 'onOut'];
+  if (inp.type === 'video' || inp.type === 'audio' || inp.type === 'photos') e.push('onEnd');
+  if (inp.type === 'title' && ['geri', 'birazdan'].includes(inp.title.template)) e.push('cdEnd', 'cdLeft');
+  return e;
+}
+function fireTriggers(inp, ev) {
+  (inp.triggers || []).filter(t => t.ev === ev).forEach(t => setTimeout(() => runTrigger(inp, t), 0));
+}
+function runTrigger(inp, tr) {
+  const id = tr.target ?? inp.id, tgt = byId(id), n = Number(tr.n) || 0, m = tgt && mediaEl(tgt);
+  if (!tgt && !['recStart', 'recStop', 'streamStart', 'streamStop', 'ftbOn', 'ftbOff', 'replay'].includes(tr.act)) return;
+  switch (tr.act) {
+    case 'cut': quickCut(id); break;
+    case 'fade': quickTrans(id, 'fade', 600); break;
+    case 'auto': quickTrans(id); break;
+    case 'stinger': stingerTo(n, id); break;
+    case 'ovOn': { const o = S.overlays[n]; o.inputId = id; o.on = true; renderOverlays(); markInputs(); break; }
+    case 'ovOff': { const o = S.overlays[n]; if (!tr.target || o.inputId === id) o.on = false; renderOverlays(); markInputs(); break; }
+    case 'ovToggle': toggleOverlay(n, id); break;
+    case 'play': m?.play().catch(() => { }); break;
+    case 'pause': m?.pause(); break;
+    case 'restart': if (m) m.currentTime = 0; if (tgt.type === 'photos') { tgt.photos.idx = 0; tgt._ph.since = performance.now(); } break;
+    case 'next': if (tgt.type === 'video') nextInList(tgt, 1, false); else if (tgt.type === 'photos') photosNext(tgt, 1); else if (tgt.type === 'title') titleNext(tgt, 1); break;
+    case 'recStart': if (!outState.record) startOutput('record'); break;
+    case 'recStop': stopOutput('record'); break;
+    case 'streamStart': if (!outState.stream) toggleStream(); break;
+    case 'streamStop': stopOutput('stream'); break;
+    case 'ftbOn': S.ftb.on = true; $('#btn-ftb').classList.add('on'); break;
+    case 'ftbOff': S.ftb.on = false; $('#btn-ftb').classList.remove('on'); break;
+    case 'replay': replayHotkey(); break;
+  }
+  toast(`Tetikleyici: ${inp.name} → ${TRIG_ACTIONS[tr.act]}${tgt && tgt !== inp ? ' (' + tgt.name + ')' : ''}`);
+}
+function checkCountdowns() {
+  for (const inp of S.inputs) {
+    if (inp.type !== 'title' || !inp.triggers?.length || !inp._cdStart) continue;
+    const d = inp.title; if (!['geri', 'birazdan'].includes(d.template) || !(Number(d.minutes) > 0)) continue;
+    if (inp._cdKey !== inp._cdStart) { inp._cdKey = inp._cdStart; inp._cdFired = new Set(); }
+    const left = Number(d.minutes) * 60 - (performance.now() - inp._cdStart) / 1000;
+    inp.triggers.forEach((tr, k) => {
+      if (inp._cdFired.has(k)) return;
+      if ((tr.ev === 'cdEnd' && left <= 0) || (tr.ev === 'cdLeft' && left <= (Number(tr.secs) || 0) && left > -2)) { inp._cdFired.add(k); runTrigger(inp, tr); }
+    });
+  }
+}
+
 function addStudio(style = 'haber', data) {
   const st = STUDIO_STYLES[style] || STUDIO_STYLES.haber;
   const inp = baseInput('studio', st.name);
@@ -239,7 +380,7 @@ function addStudio(style = 'haber', data) {
 
 // Sahne: birden fazla kaynağı tek görüntüde birleştirir (PIP, yan yana, 2x2 ...)
 function sceneCandidates(exceptId) {
-  const pri = { camera: 0, screen: 1, video: 2, replay: 3, image: 4 };
+  const pri = { camera: 0, screen: 1, video: 2, replay: 3, image: 4, photos: 5 };
   return S.inputs.filter(i => i.id !== exceptId && i.type in pri).sort((a, b) => pri[a.type] - pri[b.type]);
 }
 function applyScenePreset(inp, key) {
@@ -293,31 +434,42 @@ function addAudioFile(file) {
   const a = new Audio(); a.loop = true; a.preload = 'auto';
   a.src = file.path ? mediaUrl(file.path) : file.url;
   inp.media = a;
+  a.addEventListener('ended', () => fireTriggers(inp, 'onEnd'));
   setupAudio(inp, AC.createMediaElementSource(a));
   return registerInput(inp);
 }
 
-// ---------------------------------------------------------------- Anlık tekrar (Instant Replay)
-// Program çıktısı sürekli küçük JPEG kareler olarak hafızada tutulur (son N saniye).
-const RP = { canvas: document.createElement('canvas'), frames: [], busy: 0 };
-const rpctx = RP.canvas.getContext('2d', { alpha: false });
-function replaySize() { RP.canvas.width = 960; RP.canvas.height = Math.round(960 * H / W); }
+// ---------------------------------------------------------------- Anlık tekrar (Instant Replay) — çok açılı
+// 4 açıya kadar (Program + kameralar) sürekli küçük JPEG kareler olarak hafızada tutulur (son N saniye).
+// Her yakalama bir "olay" olur: etiketlenir, aranır, tek açıdan ya da Quad View (4'lü) oynatılır.
+const RP = { bufs: [0, 1, 2, 3].map(() => ({ cv: document.createElement('canvas'), frames: [], busy: 0, src: undefined })), evId: 0 };
+function replaySize() { RP.bufs.forEach((B, a) => { const w = a === 0 ? 960 : 640; B.cv.width = w; B.cv.height = Math.round(w * H / W); B.frames = []; }); }
+function replayClear() { RP.bufs.forEach(B => B.frames = []); }
+function replayAngles() { const r = S.inputs.find(i => i.type === 'replay'); return r ? r.rp.angles : ['pgm', null, null, null]; }
+function replayAngleName(src) { return src === 'pgm' ? 'Program' : src == null ? null : (byId(src)?.name || null); }
 function replayCapture(t) {
-  if (!S.settings.replayOn || RP.busy > 8) return;
-  rpctx.drawImage(prog, 0, 0, RP.canvas.width, RP.canvas.height);
-  RP.busy++;
-  RP.canvas.toBlob(b => {
-    RP.busy--; if (!b) return;
-    RP.frames.push({ t, b });
-    const lim = t - (Number(S.settings.replaySecs) || 30) * 1000;
-    while (RP.frames.length && RP.frames[0].t < lim) RP.frames.shift();
-  }, 'image/jpeg', 0.8);
+  if (!S.settings.replayOn) return;
+  const angles = replayAngles(), lim = t - (Number(S.settings.replaySecs) || 30) * 1000;
+  RP.bufs.forEach((B, a) => {
+    const src = angles[a] ?? null;
+    if (src !== B.src) { B.src = src; B.frames = []; }
+    if (src == null) return;
+    if (a > 0 && S.settings.replayExtraHalf && frame % 2) return; // ek açılar 15 fps: daha az işlemci
+    if (B.busy > 6) return;
+    const c = B.cv.getContext('2d', { alpha: false }), w = B.cv.width, h = B.cv.height;
+    if (src === 'pgm') c.drawImage(prog, 0, 0, w, h);
+    else { const inp = byId(src); if (!inp || !hasVideo(inp)) return; c.fillStyle = '#000'; c.fillRect(0, 0, w, h); drawContent(c, inp, 1, 0, 0, w, h, t, null); }
+    B.busy++;
+    B.cv.toBlob(b => { B.busy--; if (!b) return; B.frames.push({ t, b }); while (B.frames.length && B.frames[0].t < lim) B.frames.shift(); }, 'image/jpeg', 0.8);
+  });
 }
 function addReplay() {
   const inp = baseInput('replay', 'Anlık Tekrar');
   inp.el = document.createElement('canvas'); inp.el.width = W; inp.el.height = H;
-  const c = inp.el.getContext('2d'); c.fillStyle = '#05070c'; c.fillRect(0, 0, W, H);
-  inp.rp = { clip: [], time: 0, speed: 0.5, secs: 8, last: -1, loading: false };
+  const first = !S.inputs.some(i => i.type === 'replay');
+  const cams = S.inputs.filter(i => i.type === 'camera' || i.type === 'screen').slice(0, 3).map(i => i.id);
+  inp.rp = { events: [], ev: null, angle: 0, quad: false, speed: 0.5, secs: 8, time: 0, last: [-1, -1, -1, -1], loading: [0, 0, 0, 0], bm: [null, null, null, null],
+    angles: first ? ['pgm', cams[0] ?? null, cams[1] ?? null, cams[2] ?? null] : ['pgm', null, null, null] };
   inp.fit = 'stretch';
   drawReplayIdle(inp);
   return registerInput(inp);
@@ -329,36 +481,66 @@ function drawReplayIdle(inp) {
   c.fillText('Tekrar yakalamak için ⏺ veya R tuşu', w / 2, h / 2);
 }
 function replayMark(inp) {
-  if (!S.settings.replayOn) return toast('Anlık tekrar Ayarlar > Genel bölümünden kapalı.', true);
-  const now = performance.now();
-  inp.rp.clip = RP.frames.filter(f => f.t >= now - inp.rp.secs * 1000);
-  inp.rp.time = 0; inp.rp.last = -1;
-  if (!inp.rp.clip.length) { toast('Henüz kaydedilmiş görüntü yok.', true); return Promise.resolve(false); }
-  toast(`Son ${inp.rp.secs} sn yakalandı (${inp.rp.speed}x hız).`);
-  inp.rp.loading = true;
-  return createImageBitmap(inp.rp.clip[0].b).then(bm => { drawReplayFrame(inp, bm); inp.rp.last = 0; inp.rp.loading = false; return true; })
-    .catch(() => { inp.rp.loading = false; return true; });
+  if (!S.settings.replayOn) { toast('Anlık tekrar Ayarlar > Genel bölümünden kapalı.', true); return Promise.resolve(false); }
+  const from = performance.now() - inp.rp.secs * 1000;
+  const clips = RP.bufs.map(B => B.frames.filter(f => f.t >= from));
+  if (!clips.some(c => c.length)) { toast('Henüz kaydedilmiş görüntü yok.', true); return Promise.resolve(false); }
+  let t0 = Infinity, t1 = 0; clips.forEach(c => { if (c.length) { t0 = Math.min(t0, c[0].t); t1 = Math.max(t1, c[c.length - 1].t); } });
+  const ev = { id: ++RP.evId, name: `Olay ${RP.evId}`, clock: new Date().toLocaleTimeString('tr-TR'), tags: [], clips, t0, len: t1 - t0,
+    names: replayAngles().map(replayAngleName) };
+  inp.rp.events.unshift(ev); if (inp.rp.events.length > 40) inp.rp.events.pop();
+  toast(`${ev.name} yakalandı: son ${inp.rp.secs} sn, ${clips.filter(c => c.length).length} açı (${inp.rp.speed}x).`);
+  return replayPlay(inp, ev);
 }
-function drawReplayFrame(inp, bm) {
-  const c = inp.el.getContext('2d'), w = inp.el.width, h = inp.el.height, rp = inp.rp;
-  c.drawImage(bm, 0, 0, w, h); bm.close();
-  const s = h / 1080;
+function replayPlay(inp, ev) {
+  const rp = inp.rp; rp.ev = ev; rp.time = 0; rp.last = [-1, -1, -1, -1]; rp.loading = [0, 0, 0, 0];
+  rp.bm.forEach(b => b?.close?.()); rp.bm = [null, null, null, null];
+  if (!ev.clips[rp.angle]?.length) rp.angle = Math.max(0, ev.clips.findIndex(c => c.length));
+  const need = rp.quad ? [0, 1, 2, 3] : [rp.angle];
+  return Promise.all(need.filter(a => ev.clips[a]?.length).map(a => createImageBitmap(ev.clips[a][0].b).then(bm => { rp.bm[a] = bm; rp.last[a] = 0; }).catch(() => { })))
+    .then(() => { replayRender(inp); return true; });
+}
+function replaySetAngle(inp, a) { const rp = inp.rp; rp.angle = a; rp.quad = false; rp.last = [-1, -1, -1, -1]; if (rp.ev && !rp.ev.clips[a]?.length) toast(`Bu olayda ${a + 1}. açı kaydı yok.`, true); renderInputs(); }
+function replayToggleQuad(inp) { inp.rp.quad = !inp.rp.quad; inp.rp.last = [-1, -1, -1, -1]; toast(`Tekrar: ${inp.rp.quad ? 'Quad View (4 açı)' : `${inp.rp.angle + 1}. açı`}`); renderInputs(); }
+function replayRender(inp) {
+  const c = inp.el.getContext('2d'), w = inp.el.width, h = inp.el.height, rp = inp.rp, s = h / 1080, ev = rp.ev;
+  c.fillStyle = '#05070c'; c.fillRect(0, 0, w, h);
+  c.textBaseline = 'middle';
+  if (rp.quad) {
+    [0, 1, 2, 3].forEach(a => {
+      const x = (a % 2) * w / 2, y = (a >> 1) * h / 2;
+      if (rp.bm[a]) c.drawImage(rp.bm[a], x, y, w / 2, h / 2);
+      else { c.fillStyle = '#5d667c'; c.textAlign = 'center'; c.font = `600 ${30 * s}px Segoe UI, Arial`; c.fillText('Açı kaydı yok', x + w / 4, y + h / 4); }
+      const lb = `${a + 1}  ${ev?.names[a] || '—'}`; c.font = `800 ${26 * s}px Segoe UI, Arial`; const lw = c.measureText(lb).width + 30 * s;
+      c.fillStyle = 'rgba(0,0,0,0.65)'; c.fillRect(x + 16 * s, y + h / 2 - 60 * s, lw, 44 * s);
+      c.fillStyle = '#fff'; c.textAlign = 'left'; c.fillText(lb, x + 31 * s, y + h / 2 - 38 * s);
+    });
+    c.fillStyle = '#000'; c.fillRect(w / 2 - 2 * s, 0, 4 * s, h); c.fillRect(0, h / 2 - 2 * s, w, 4 * s);
+  } else if (rp.bm[rp.angle]) c.drawImage(rp.bm[rp.angle], 0, 0, w, h);
   c.fillStyle = '#ff2d4b'; c.beginPath(); c.roundRect(w - 330 * s, 50 * s, 270 * s, 70 * s, 10 * s); c.fill();
-  c.fillStyle = '#fff'; c.font = `900 ${34 * s}px Segoe UI, Arial`; c.textAlign = 'center'; c.textBaseline = 'middle';
+  c.fillStyle = '#fff'; c.font = `900 ${34 * s}px Segoe UI, Arial`; c.textAlign = 'center';
   c.fillText(`TEKRAR ${rp.speed < 1 ? '• ' + rp.speed + 'x' : ''}`, w - 195 * s, 86 * s);
+  if (ev && ev.tags.length && !rp.quad) {
+    const tg = ev.tags.join(' • '); c.font = `700 ${26 * s}px Segoe UI, Arial`; const tw = c.measureText(tg).width + 40 * s;
+    c.fillStyle = 'rgba(0,0,0,0.65)'; c.beginPath(); c.roundRect(w - 60 * s - tw, 130 * s, tw, 48 * s, 8 * s); c.fill();
+    c.fillStyle = '#fff'; c.textAlign = 'right'; c.fillText(tg, w - 80 * s, 155 * s);
+  }
 }
 function replayTick(dt) {
   for (const inp of S.inputs) {
-    if (inp.type !== 'replay' || !inp.rp.clip.length) continue;
-    const rp = inp.rp, t0 = rp.clip[0].t, len = rp.clip[rp.clip.length - 1].t - t0;
+    if (inp.type !== 'replay' || !inp.rp.ev) continue;
+    const rp = inp.rp, ev = rp.ev;
     rp.time += dt * rp.speed;
-    if (rp.time > len + 400) rp.time = 0; // döngü
-    let i = rp.last < 0 ? 0 : rp.last;
-    if (rp.time < (rp.clip[i].t - t0)) i = 0;
-    while (i + 1 < rp.clip.length && rp.clip[i + 1].t - t0 <= rp.time) i++;
-    if (i === rp.last || rp.loading) continue;
-    rp.loading = true; rp.last = i;
-    createImageBitmap(rp.clip[i].b).then(bm => { rp.loading = false; drawReplayFrame(inp, bm); }).catch(() => { rp.loading = false; });
+    if (rp.time > ev.len + 400) { rp.time = 0; }
+    for (const a of rp.quad ? [0, 1, 2, 3] : [rp.angle]) {
+      const clip = ev.clips[a]; if (!clip?.length || rp.loading[a]) continue;
+      let i = rp.last[a] < 0 ? 0 : rp.last[a];
+      if (clip[i].t - ev.t0 > rp.time) i = 0;
+      while (i + 1 < clip.length && clip[i + 1].t - ev.t0 <= rp.time) i++;
+      if (i === rp.last[a]) continue;
+      rp.loading[a] = 1; rp.last[a] = i;
+      createImageBitmap(clip[i].b).then(bm => { rp.loading[a] = 0; rp.bm[a]?.close?.(); rp.bm[a] = bm; replayRender(inp); }).catch(() => { rp.loading[a] = 0; });
+    }
   }
 }
 
@@ -411,6 +593,7 @@ function drawContent(ctx, inp, alpha, rx, ry, rw, rh, tNow, fitOverride) {
     if (inp.type === 'title') TitleRenderer.render(inp.el, inp, W, H, inp.onAir ? (tNow - inp.onAirSince) / 1000 : 30);
     else if (inp.type === 'studio') StudioRenderer.render(inp.el, inp, W, H, tNow / 1000);
     else if (inp.type === 'scene') renderScene(inp, tNow);
+    else if (inp.type === 'photos') renderPhotos(inp, tNow);
     inp._rt = tNow;
   }
   let [sw, sh] = srcSize(inp);
@@ -454,6 +637,15 @@ function renderProgram(t) {
     pctx.fillStyle = '#000'; pctx.fillRect(0, 0, W, H);
     switch (tr.type) {
       case 'fade': pctx.drawImage(bufA, 0, 0); pctx.globalAlpha = e; pctx.drawImage(bufB, 0, 0); break;
+      case 'alphafade': // çıkan kaynak saydamlaşırken gelen belirir (saydam/alfa içerikte daha temiz)
+        pctx.globalAlpha = 1 - e; pctx.drawImage(bufA, 0, 0); pctx.globalAlpha = e; pctx.drawImage(bufB, 0, 0); break;
+      case 'stinger': {
+        if (tr.v && tr.v.readyState >= 2 && !tr.manual) { const pv = tr.v.ended ? 1 : tr.v.currentTime * 1000 / tr.dur; if (pv > p - 0.3) p = Math.min(1, pv); }
+        pctx.drawImage(p * tr.dur < tr.cutAt ? bufA : bufB, 0, 0);
+        if (tr.v) { if (tr.v.readyState >= 2) pctx.drawImage(tr.v, 0, 0, W, H); }
+        else Stinger.draw(pctx, W, H, tr.st.style, p, tr.st.color, tr.cutAt / tr.dur);
+        break;
+      }
       case 'dip': case 'dipw':
         pctx.fillStyle = tr.type === 'dip' ? '#000' : '#fff'; pctx.fillRect(0, 0, W, H);
         if (p < 0.5) { pctx.globalAlpha = 1 - p * 2; pctx.drawImage(bufA, 0, 0); }
@@ -513,7 +705,7 @@ function tick(e) {
   frame++; fpsCount++;
   if (frame % 3 === 0) drawThumbs(t0);
   if (frame % 2 === 0) drawMeters();
-  if (frame % 10 === 0) updateVideoProgress();
+  if (frame % 10 === 0) { updateVideoProgress(); checkCountdowns(); }
   renderMs = renderMs * 0.9 + (performance.now() - t0) * 0.1;
   if (t0 - fpsT >= 1000) {
     $('#st-fps').textContent = `${Math.round(fpsCount * 1000 / (t0 - fpsT))} fps`;
@@ -542,7 +734,8 @@ function updateOnAir(t) {
     const on = live.has(inp.id);
     if (on !== inp.onAir) {
       inp.onAir = on;
-      if (on) { inp.onAirSince = t; if (inp.type === 'title' && inp.title.template === 'sayac') inp._swStart = null; }
+      if (on) { inp.onAirSince = t; if (inp.type === 'title' && inp.title.template === 'sayac') inp._swStart = null; if (inp.type === 'photos') { inp._ph.since = t; inp._ph.prev = null; } }
+      if (inp.triggers?.length) fireTriggers(inp, on ? 'onIn' : 'onOut');
       const m = mediaEl(inp);
       if (m && inp.autoPlay) {
         if (on) { if (m.ended) m.currentTime = 0; m.play().catch(() => { }); }
@@ -573,6 +766,8 @@ function transition(type, ms) {
 function finishTransition() {
   const tr = S.trans; if (!tr) return;
   S.trans = null;
+  if (tr.v) { try { tr.v.pause(); } catch { } }
+  $$('#stingers button').forEach(b => b.classList.remove('on'));
   S.programId = tr.to; S.previewId = tr.from;
   $('#tbar').value = 0;
   $('#btn-auto').classList.remove('on');
@@ -584,6 +779,55 @@ function updateMonitorNames() {
   $('#pvw-name').textContent = p ? `${p.n}. ${p.name}` : '—';
   $('#pgm-name').textContent = g ? `${g.n}. ${g.name}` : '—';
 }
+// ---- Stinger geçişleri (8 yuva)
+const stingerVids = [];
+function stingerVideo(n) {
+  const st = S.settings.stingers[n]; if (!st || st.kind !== 'video' || !(st.path || st.url)) return null;
+  const src = st.path ? mediaUrl(st.path) : st.url;
+  let v = stingerVids[n];
+  if (!v || v._src !== src) { v = document.createElement('video'); v.muted = true; v.preload = 'auto'; v.playsInline = true; v.src = src; v._src = src; v.load(); stingerVids[n] = v; }
+  return v;
+}
+function stingerLabel(n) { const st = S.settings.stingers[n]; if (!st) return 'boş'; return st.kind === 'video' ? (st.name || 'Video') : (STINGER_STYLES[st.style]?.name || st.style); }
+function stingerTo(n, id) {
+  const st = S.settings.stingers[n];
+  if (!st) { toast(`Stinger ${n + 1} boş. Sağ tıkla veya Ayarlar > Stinger'dan ayarla.`, true); return; }
+  if (S.trans) finishTransition();
+  if (id != null) S.previewId = id;
+  if (!S.previewId) return;
+  let dur = Number(st.dur) || 1000, cutAt = st.cut != null ? Number(st.cut) : dur / 2, v = null;
+  if (st.kind === 'video') {
+    v = stingerVideo(n);
+    if (!v || v.error) { toast(`Stinger ${n + 1} videosu açılamadı.`, true); return; }
+    if (v.duration) dur = v.duration * 1000;
+    v.currentTime = 0; v.play().catch(() => { });
+  }
+  cutAt = Math.min(Math.max(0, cutAt), dur);
+  S.trans = { from: S.programId, to: S.previewId, type: 'stinger', st, v, dur, cutAt, start: performance.now(), manual: false, p: 0 };
+  $('#btn-auto').classList.add('on');
+  $(`#stingers button[data-s="${n}"]`)?.classList.add('on');
+}
+function renderStingerBar() {
+  const box = $('#stingers');
+  box.innerHTML = S.settings.stingers.map((st, n) => `<button data-s="${n}" class="${st ? '' : 'empty'}" title="Stinger ${n + 1}: ${esc(stingerLabel(n))} (Ctrl+F${n + 1}) • Sağ tık: ayarla">S${n + 1}</button>`).join('');
+}
+$('#stingers').addEventListener('click', e => { const b = e.target.closest('button'); if (b) stingerTo(+b.dataset.s); });
+$('#stingers').addEventListener('contextmenu', e => { const b = e.target.closest('button'); if (b) { e.preventDefault(); openSettings('stinger'); } });
+
+// ---- GO düğmesi (vMix 29): her kaynakta ayarlanabilir hızlı eylem
+const GO_OPTS = () => [['quick', 'Hızlı geçiş (Geçiş 500 ms)'], ['cut', 'Kes'], ['auto', 'Otomatik (varsayılan geçiş)'],
+  ...Object.entries(TR_NAMES).filter(([k]) => k !== 'cut').map(([k, n]) => [k, `${n} geçişi`]),
+  ...S.settings.stingers.map((st, n) => [`st${n}`, `Stinger ${n + 1} (${stingerLabel(n)})`])];
+function goLabel(inp) { const g = inp.go || 'quick'; return (GO_OPTS().find(([k]) => k === g) || [0, 'Hızlı geçiş'])[1]; }
+function goAction(inp) {
+  const g = inp.go || 'quick';
+  if (g === 'quick') quickTrans(inp.id, 'fade', 500);
+  else if (g === 'cut') quickCut(inp.id);
+  else if (g === 'auto') quickTrans(inp.id);
+  else if (g.startsWith('st')) stingerTo(+g.slice(2), inp.id);
+  else quickTrans(inp.id, g);
+}
+
 function toPreview(id) { S.previewId = id; markInputs(); updateMonitorNames(); }
 function quickCut(id) { S.previewId = id; cut(); }
 function quickTrans(id, type, ms) { if (S.trans) finishTransition(); S.previewId = id; transition(type, ms); }
@@ -619,42 +863,72 @@ function renderInputs() {
     const el = document.createElement('div');
     el.className = 'inp'; el.dataset.id = inp.id;
     const isMedia = inp.type === 'video' || inp.type === 'audio';
+    if (inp.color) el.style.setProperty('--cat', inp.color);
+    el.classList.toggle('has-cat', !!inp.color);
     el.innerHTML = `
-      <div class="th"><canvas width="256" height="144"></canvas><span class="num">${inp.n}</span><span class="tag">${TYPE_NAMES[inp.type]}</span>${isMedia ? '<i class="prog"></i>' : ''}</div>
+      <div class="th"><canvas width="256" height="144"></canvas><span class="num">${inp.n}</span><span class="tag">${TYPE_NAMES[inp.type]}</span>
+        <button class="cls" data-b="del" title="Kaynağı kapat">✕</button>
+        ${isMedia || inp.type === 'photos' ? `<button class="lp ${inp.loop ? 'on' : ''}" data-b="loop" title="Döngü aç/kapa">⟲</button>` : ''}
+        ${isMedia ? '<i class="prog"></i>' : ''}</div>
       <div class="nm" title="${esc(inp.name)}">${esc(cardName(inp))}</div>
       <div class="bar">
-        ${hasVideo(inp) ? `<button data-b="cut" title="Doğrudan programa kes">KES</button><button data-b="fade" title="Hızlı geçiş">GEÇ</button>` : ''}
+        ${hasVideo(inp) ? `<button data-b="go" class="go" title="GO: ${esc(goLabel(inp))} (Ayarlar > Genel'den değiştir)">GO</button><button data-b="cut" title="Doğrudan programa kes">KES</button>` : ''}
         ${isMedia ? `<button data-b="play" title="Oynat / Duraklat">⏯</button><button data-b="restart" title="Başa sar">⏮</button>` : ''}
         ${inp.list && inp.list.length > 1 ? `<button data-b="next" title="Listede sonraki">⏭</button>` : ''}
+        ${inp.type === 'photos' ? `<button data-b="pprev" title="Önceki fotoğraf">⏮</button><button data-b="pnext" title="Sonraki fotoğraf">⏭</button>` : ''}
+        ${inp.triggers?.length ? `<button data-b="trg" class="trg" title="${inp.triggers.length} tetikleyici">⚡</button>` : ''}
         ${titleHasList(inp) ? `<button data-b="tprev" title="Önceki isim / satır">⏮</button><button data-b="tnext" title="Sonraki isim / satır (N)">⏭</button>` : ''}
-        ${inp.type === 'replay' ? `<button data-b="mark" title="Son saniyeleri yakala (R)">⏺</button><button data-b="speed" title="Hız">${inp.rp.speed}x</button>` : ''}
-        ${hasVideo(inp) ? [1, 2, 3, 4].map(k => `<button class="ov" data-b="ov${k - 1}" title="Overlay ${k}">${k}</button>`).join('') : ''}
+        ${inp.type === 'replay' ? `<button data-b="mark" title="Son saniyeleri yakala (R)">⏺</button><button data-b="speed" title="Hız">${inp.rp.speed}x</button><button data-b="quad" class="${inp.rp.quad ? 'on' : ''}" title="Quad View: 4 açı birden (Q)">▦</button><button data-b="angle" title="Gösterilen açı (Alt+1…4)">A${inp.rp.angle + 1}</button>` : ''}
         <button data-b="set" title="Ayarlar">⚙</button>
-        <button class="x" data-b="del" title="Kaldır">✕</button>
-      </div>`;
+      </div>
+      ${hasVideo(inp) ? `<div class="ovs">${[1, 2, 3, 4, 5, 6, 7, 8].map(k => `<button class="ov" data-b="ov${k - 1}" title="Overlay ${k}">${k}</button>`).join('')}</div>` : ''}`;
     box.appendChild(el);
     thumbCtx.set(inp.id, el.querySelector('canvas').getContext('2d'));
-    el.querySelector('.th').addEventListener('click', () => hasVideo(inp) && toPreview(inp.id));
+    el.querySelector('.th').addEventListener('click', (e) => { if (!e.target.closest('.cls, .lp') && hasVideo(inp)) toPreview(inp.id); });
     el.querySelector('.th').addEventListener('dblclick', () => openInputSettings(inp.id));
-    el.querySelector('.bar').addEventListener('click', (e) => {
+    el.addEventListener('click', (e) => {
+      if (!e.target.closest('.bar, .ovs, .cls, .lp')) return;
       const b = e.target.closest('button')?.dataset.b; if (!b) return;
       const m = mediaEl(inp);
       if (b === 'cut') quickCut(inp.id);
-      else if (b === 'fade') quickTrans(inp.id, 'fade', 500);
+      else if (b === 'go') goAction(inp);
+      else if (b === 'loop') { inp.loop = !inp.loop; const mm = mediaEl(inp); if (mm) mm.loop = inp.loop && (!inp.list || inp.list.length === 1); e.target.classList.toggle('on', inp.loop); toast(`${inp.name}: döngü ${inp.loop ? 'açık' : 'kapalı'}`); }
       else if (b === 'play' && m) m.paused ? m.play().catch(() => { }) : m.pause();
       else if (b === 'restart' && m) { m.currentTime = 0; }
       else if (b === 'next') nextInList(inp, 1, false);
+      else if (b === 'pnext') photosNext(inp, 1);
+      else if (b === 'pprev') photosNext(inp, -1);
+      else if (b === 'trg') openInputSettings(inp.id, 'trig');
       else if (b === 'tnext') titleNext(inp, 1);
       else if (b === 'tprev') titleNext(inp, -1);
       else if (b === 'mark') replayMark(inp);
-      else if (b === 'speed') { const sp = [0.25, 0.5, 0.75, 1]; inp.rp.speed = sp[(sp.indexOf(inp.rp.speed) + 1) % sp.length]; e.target.textContent = inp.rp.speed + 'x'; }
+      else if (b === 'speed') { const sp = [0.25, 0.5, 0.75, 1]; inp.rp.speed = sp[(sp.indexOf(inp.rp.speed) + 1) % sp.length]; e.target.textContent = inp.rp.speed + 'x'; if (inp.rp.ev) replayRender(inp); }
+      else if (b === 'quad') replayToggleQuad(inp);
+      else if (b === 'angle') replaySetAngle(inp, (inp.rp.angle + 1) % 4);
       else if (b.startsWith('ov')) toggleOverlay(+b[2], inp.id);
       else if (b === 'set') openInputSettings(inp.id);
-      else if (b === 'del') confirmBox(`"${inp.name}" kaldırılsın mı?`, () => removeInput(inp.id));
+      else if (b === 'del') { if (inp.onAir) confirmBox(`"${inp.name}" şu an yayında. Yine de kapatılsın mı?`, () => removeInput(inp.id)); else removeInput(inp.id); }
     });
   }
-  markInputs(); updateMonitorNames();
+  applyFilter(); markInputs(); updateMonitorNames();
 }
+// Kaynak arama + renk kategorisi filtresi
+const CAT_COLORS = ['#ff2d4b', '#ff9f43', '#ffd23f', '#19c37d', '#00d4b4', '#4c8dff', '#7b3cff', '#ff5ea8'];
+function applyFilter() {
+  const q = S.filter.q.trim().toLocaleLowerCase('tr');
+  $$('#inputs .inp').forEach(el => {
+    const inp = byId(+el.dataset.id); if (!inp) return;
+    const okQ = !q || inp.name.toLocaleLowerCase('tr').includes(q) || (TYPE_NAMES[inp.type] || '').toLocaleLowerCase('tr').includes(q) || String(inp.n) === q;
+    const okC = !S.filter.cat || inp.color === S.filter.cat;
+    el.hidden = !(okQ && okC);
+  });
+}
+function renderCatFilter() {
+  const box = $('#cat-filter');
+  box.innerHTML = `<button data-c="" class="${S.filter.cat ? '' : 'on'}" title="Tümü">Tümü</button>` + CAT_COLORS.map(c => `<button data-c="${c}" class="sw ${S.filter.cat === c ? 'on' : ''}" style="--c:${c}" title="Bu renkteki kaynaklar"></button>`).join('');
+}
+$('#cat-filter').addEventListener('click', e => { const b = e.target.closest('button'); if (!b) return; S.filter.cat = b.dataset.c || null; renderCatFilter(); applyFilter(); });
+$('#inp-search').addEventListener('input', e => { S.filter.q = e.target.value; applyFilter(); });
 function markInputs() {
   $$('#inputs .inp').forEach(el => {
     const id = +el.dataset.id;
@@ -665,7 +939,7 @@ function markInputs() {
   });
   renderOverlays();
 }
-const HEAVY = new Set(['title', 'studio', 'scene']);
+const HEAVY = new Set(['title', 'studio', 'scene', 'photos']);
 let thumbTick = 0;
 function drawThumbs(t) {
   thumbTick++;
@@ -711,7 +985,7 @@ function updateVideoProgress() {
 function renderOverlays() {
   const row = $('#ovl-row');
   if (!row.children.length) {
-    row.innerHTML = [0, 1, 2, 3].map(k => `<button class="ovl-btn" data-o="${k}" title="F${k + 1}">${k + 1}<small></small></button>`).join('');
+    row.innerHTML = [0, 1, 2, 3, 4, 5, 6, 7].map(k => `<button class="ovl-btn" data-o="${k}" title="Overlay ${k + 1} (F${k + 1})">${k + 1}<small></small></button>`).join('');
     row.addEventListener('click', e => { const b = e.target.closest('button'); if (b) toggleOverlay(+b.dataset.o); });
   }
   $$('.ovl-btn', row).forEach((b, k) => {
@@ -730,24 +1004,28 @@ $('#quick').addEventListener('click', e => { const b = e.target.closest('button'
 // ---------------------------------------------------------------- Ses mikseri
 function renderMixer() {
   const box = $('#mixer'); box.innerHTML = '';
-  box.appendChild(mkStrip('MASTER', master, null));
+  box.appendChild(mkStrip('MASTER', master, null, masterAnalyser));
+  box.appendChild(mkStrip('BUS A', BUS.A, null, BUS.A.an, 'bus'));
+  box.appendChild(mkStrip('BUS B', BUS.B, null, BUS.B.an, 'bus'));
   S.inputs.filter(hasAudio).forEach(inp => box.appendChild(mkStrip(`${inp.n}. ${inp.name}`, inp.audio, inp)));
 }
-function mkStrip(label, st, inp) {
+function mkStrip(label, st, inp, an, kind) {
   const el = document.createElement('div');
-  el.className = 'strip' + (inp ? '' : ' master');
+  el.className = 'strip' + (inp ? '' : ' master') + (kind === 'bus' ? ' bus' : '');
   el.innerHTML = `<div class="lbl" title="${esc(label)}">${esc(label)}</div>
     <div class="fx"><div class="meter"><i></i><b></b></div><input class="fader" type="range" min="0" max="150" value="${Math.round(st.vol * 100)}"><div class="meter"><i></i><b></b></div></div>
     <div class="db">${volDb(st.vol)}</div>
-    <div class="btns"><button class="m ${st.muted ? 'on' : ''}" title="Sustur">M</button>${inp ? `<button class="a ${st.afv ? 'on' : ''}" title="Ses görüntüyü izlesin (sadece yayındayken duyulur)">A</button>` : ''}</div>`;
+    <div class="btns"><button class="m ${st.muted ? 'on' : ''}" title="Sustur">🔇</button>${inp ? `<button class="a ${st.afv ? 'on' : ''}" title="AFV: ses görüntüyü izlesin (sadece yayındayken duyulur)">AFV</button>` : ''}</div>
+    ${inp ? `<div class="btns route">${['M', 'A', 'B'].map(k => `<button data-r="${k}" class="${st.bus?.[k] ? 'on' : ''}" title="${k === 'M' ? 'Master' : 'Bus ' + k}'a gönder">${k}</button>`).join('')}</div>` : ''}`;
   const fader = el.querySelector('.fader'), db = el.querySelector('.db');
   fader.addEventListener('input', () => { st.vol = fader.value / 100; db.textContent = volDb(st.vol); inp ? updateAudioGains(inp) : updateMaster(); });
   fader.addEventListener('dblclick', () => { fader.value = 100; fader.dispatchEvent(new Event('input')); });
   el.querySelector('.m').addEventListener('click', e => { st.muted = !st.muted; e.target.classList.toggle('on', st.muted); inp ? updateAudioGains(inp) : updateMaster(); });
   el.querySelector('.a')?.addEventListener('click', e => { st.afv = !st.afv; e.target.classList.toggle('on', st.afv); updateAudioGains(inp); });
+  el.querySelector('.route')?.addEventListener('click', e => { const k = e.target.dataset.r; if (!k) return; st.bus[k] = !st.bus[k]; e.target.classList.toggle('on', st.bus[k]); updateAudioGains(inp); });
   el._meters = $$('.meter', el);
-  el._an = inp ? inp.a.analyser : masterAnalyser;
-  el._inp = inp;
+  el._an = inp ? inp.a.analyser : an;
+  el._inp = inp; el._pk = { peak: 0, hold: 0 };
   return el;
 }
 function volDb(v) { return v <= 0.001 ? '-∞ dB' : `${(20 * Math.log10(v)).toFixed(1)} dB`; }
@@ -758,7 +1036,7 @@ function drawMeters() {
     let peak = 0; for (let i = 0; i < tdBuf.length; i++) { const v = Math.abs(tdBuf[i]); if (v > peak) peak = v; }
     const db = peak > 0 ? 20 * Math.log10(peak) : -100;
     const h = Math.max(0, Math.min(1, (db + 60) / 60));
-    const st = el._inp ? el._inp.a : (master._m ||= { peak: 0, hold: 0 });
+    const st = el._inp ? el._inp.a : el._pk;
     st.peak = Math.max(h, (st.peak || 0) * 0.92);
     st.hold = Math.max(st.peak, (st.hold || 0) - 0.006);
     const px = el._meters[0].clientHeight;
@@ -772,9 +1050,10 @@ function pickMime() {
   const list = ['video/webm;codecs=h264,opus', 'video/webm;codecs=vp9,opus', 'video/webm;codecs=vp8,opus', 'video/webm'];
   return list.find(m => window.MediaRecorder && MediaRecorder.isTypeSupported(m)) || '';
 }
-function outputStream() {
+function outputStream(kind) {
   const v = prog.captureStream(Number(S.settings.fps) || 30).getVideoTracks();
-  return new MediaStream([...v, ...audioDest.stream.getAudioTracks()]);
+  const bus = kind === 'record' ? S.settings.recBus : kind === 'stream' ? S.settings.streamBus : 'M';
+  return new MediaStream([...v, ...busDest(bus).stream.getAudioTracks()]);
 }
 
 async function startOutput(kind) {
@@ -783,7 +1062,7 @@ async function startOutput(kind) {
   const mime = pickMime();
   const codec = /h264/.test(mime) ? 'h264' : /vp9/.test(mime) ? 'vp9' : 'vp8';
   const interKbps = kind === 'record' ? Math.max(st.recbitrate, 6000) : Math.max(st.vbitrate * 2, 8000);
-  const ms = outputStream();
+  const ms = outputStream(kind);
   const rec = new MediaRecorder(ms, { mimeType: mime, videoBitsPerSecond: interKbps * 1000, audioBitsPerSecond: 256000 });
   const o = { rec, ms, start: Date.now(), chunks: [], queue: Promise.resolve(), stats: null, file: null };
 
@@ -940,6 +1219,7 @@ async function addFlow(type) {
     else if (type === 'color') { const i = addColor(); openInputSettings(i.id); }
     else if (type === 'replay') { const i = addReplay(); openInputSettings(i.id, 'tekrar'); }
     else if (type === 'studio') pickStudio();
+    else if (type === 'photos') { const f = await pickFiles('image'); const i = addPhotos(f); openInputSettings(i.id, 'foto'); }
     else if (type === 'scene') pickScene();
     else if (type === 'title') pickTitle();
     else if (type === 'camera' || type === 'mic') pickDevice(type);
@@ -1044,8 +1324,10 @@ function openInputSettings(id, tab) {
   if (inp.type === 'replay') tabs.push(['tekrar', 'Tekrar']);
   if (inp.type === 'studio') tabs.push(['studio', 'Stüdyo']);
   if (inp.type === 'scene') tabs.push(['sahne', 'Sahne Düzeni']);
+  if (inp.type === 'photos') tabs.push(['foto', 'Fotoğraflar']);
   if (hasVideo(inp)) tabs.push(['konum', 'Konum / Kırp'], ['renk', 'Renk']);
   if (['camera', 'video', 'screen', 'image'].includes(inp.type)) tabs.push(['chroma', 'Yeşil Perde']);
+  tabs.push(['trig', `Tetikleyiciler${inp.triggers?.length ? ' (' + inp.triggers.length + ')' : ''}`]);
   let cur = tab || 'genel';
   const body = document.createElement('div');
   const draw = () => {
@@ -1075,6 +1357,10 @@ function openInputSettings(id, tab) {
     if (cur === 'genel') {
       txt('İsim', inp, 'name', 'text', () => { $(`#inputs .inp[data-id="${inp.id}"] .nm`).textContent = inp.name; updateMonitorNames(); });
       if (hasVideo(inp) && inp.type !== 'color') sel('Sığdırma', inp, 'fit', [['contain', 'Sığdır (siyah bant)'], ['cover', 'Doldur (kırp)'], ['stretch', 'Esnet']]);
+      if (hasVideo(inp)) sel('GO düğmesi', inp, 'go', GO_OPTS(), () => renderInputs());
+      if (!inp.go) inp.go = 'quick';
+      row('Renk kategorisi', `<div class="swatches"><button class="none ${inp.color ? '' : 'on'}" data-c="">—</button>${CAT_COLORS.map(c => `<button data-c="${c}" class="${inp.color === c ? 'on' : ''}" style="--c:${c}"></button>`).join('')}</div>`);
+      g.lastElementChild.querySelector('.swatches').onclick = (e) => { const b = e.target.closest('button'); if (!b) return; inp.color = b.dataset.c || null; renderInputs(); draw(); };
       if (inp.type === 'color') {
         txt('Renk 1', inp.src, 'color', 'color'); txt('Renk 2 (degrade)', inp.src, 'color2', 'color');
         row('', `<button>Degradeyi kaldır</button>`); g.lastElementChild.querySelector('button').onclick = () => { inp.src.color2 = ''; };
@@ -1174,10 +1460,65 @@ function openInputSettings(id, tab) {
       rng('Çerçeve kalınlığı', sc, 'border', 0, 20); txt('Çerçeve rengi', sc, 'borderColor', 'color');
       rng('Köşe yuvarlaklığı', sc, 'radius', 0, 80); chk('Gölge', sc, 'shadow');
       g.insertAdjacentHTML('beforeend', `<span></span><p class="note">Pencerelere kamera, ekran, video, resim veya stüdyo seçebilirsin. Sahneyi programa aldığında içindeki videolar oynar, sesleri (AFV) açılır.</p>`);
+    } else if (cur === 'foto') {
+      const P = inp.photos;
+      rng('Süre (sn)', P, 'interval', 1, 60, 0.5); rng('Geçiş (ms)', P, 'fade', 0, 3000, 50);
+      sel('Sığdırma', P, 'fit', [['cover', 'Doldur'], ['contain', 'Sığdır']]);
+      chk('Karışık sıra', P, 'shuffle'); chk('Yavaş yakınlaşma (Ken Burns)', P, 'kenburns'); chk('Döngü', inp, 'loop', () => renderInputs());
+      row('', `<button class="primary">+ Fotoğraf Ekle</button><input type="search" class="ph-q" placeholder="Dosya adı ara…" style="flex:1" value="${esc(inp._lq || '')}">`);
+      const [addB, qB] = g.lastElementChild.children;
+      addB.onclick = async () => { const f = await pickFiles('image'); f.forEach(x => P.list.push({ path: x.path || null, url: x.url || null, name: x.name })); renderInputs(); draw(); };
+      const ul = document.createElement('div'); ul.className = 'ph-list'; g.append(document.createElement('span'), ul);
+      const drawL = () => {
+        const q = (inp._lq || '').toLocaleLowerCase('tr');
+        ul.innerHTML = P.list.map((it, k) => ({ it, k })).filter(({ it }) => !q || it.name.toLocaleLowerCase('tr').includes(q)).map(({ it, k }) => `<div class="row" data-k="${k}">
+          <span style="flex:1;${k === P.idx ? 'color:#19c37d;font-weight:700' : ''}">${k + 1}. ${esc(it.name)}</span><button data-l="show">Göster</button><button data-l="up">▲</button><button data-l="down">▼</button><button data-l="del">✕</button></div>`).join('') || '<p class="note">Fotoğraf yok.</p>';
+      };
+      qB.oninput = () => { inp._lq = qB.value; drawL(); };
+      ul.onclick = (e) => { const r = e.target.closest('[data-k]'), a = e.target.dataset.l; if (!r || !a) return; const k = +r.dataset.k, L = P.list;
+        if (a === 'show') { inp._ph.prev = P.idx; P.idx = k; inp._ph.since = performance.now(); }
+        if (a === 'up' && k > 0) [L[k - 1], L[k]] = [L[k], L[k - 1]];
+        if (a === 'down' && k < L.length - 1) [L[k + 1], L[k]] = [L[k], L[k + 1]];
+        if (a === 'del') { L.splice(k, 1); if (P.idx >= L.length) P.idx = 0; inp._ph.prev = null; }
+        renderInputs(); drawL(); };
+      drawL();
+    } else if (cur === 'trig') {
+      g.style.gridTemplateColumns = '1fr';
+      inp.triggers = inp.triggers || [];
+      const evs = trigEventsFor(inp);
+      const tgtOpts = [['', 'Bu kaynak'], ...S.inputs.filter(i => i.id !== inp.id).map(i => [String(i.id), `${i.n}. ${i.name}`])];
+      const needsTgt = (a) => !['recStart', 'recStop', 'streamStart', 'streamStop', 'ftbOn', 'ftbOff', 'replay'].includes(a);
+      const wrap = document.createElement('div'); wrap.className = 'trg-list'; g.appendChild(wrap);
+      inp.triggers.forEach((tr, k) => {
+        const r = document.createElement('div'); r.className = 'trg-row';
+        r.innerHTML = `<select class="ev">${evs.map(e => `<option value="${e}" ${tr.ev === e ? 'selected' : ''}>${TRIG_EVENTS[e]}</option>`).join('')}</select>
+          ${tr.ev === 'cdLeft' ? `<input class="secs" type="number" min="0" step="1" value="${tr.secs ?? 10}" style="width:64px" title="Kalan saniye">` : ''}
+          <span>→</span>
+          <select class="act">${Object.entries(TRIG_ACTIONS).map(([a, nm]) => `<option value="${a}" ${tr.act === a ? 'selected' : ''}>${nm}</option>`).join('')}</select>
+          ${needsTgt(tr.act) ? `<select class="tgt">${tgtOpts.map(([v, nm]) => `<option value="${v}" ${String(tr.target ?? '') === v ? 'selected' : ''}>${esc(nm)}</option>`).join('')}</select>` : ''}
+          ${/^ov/.test(tr.act) || tr.act === 'stinger' ? `<select class="n">${[0, 1, 2, 3, 4, 5, 6, 7].map(i => `<option value="${i}" ${(+tr.n || 0) === i ? 'selected' : ''}>${tr.act === 'stinger' ? 'Stinger' : 'Overlay'} ${i + 1}</option>`).join('')}</select>` : ''}
+          <button class="del" title="Sil">✕</button>`;
+        r.onchange = (e) => {
+          const c = e.target.classList;
+          if (c.contains('ev')) tr.ev = e.target.value; if (c.contains('secs')) tr.secs = +e.target.value;
+          if (c.contains('act')) tr.act = e.target.value; if (c.contains('tgt')) tr.target = e.target.value ? +e.target.value : null;
+          if (c.contains('n')) tr.n = +e.target.value;
+          if (c.contains('ev') || c.contains('act')) draw();
+        };
+        r.querySelector('.del').onclick = () => { inp.triggers.splice(k, 1); renderInputs(); draw(); };
+        wrap.appendChild(r);
+      });
+      g.insertAdjacentHTML('beforeend', `<div class="row"><button class="primary">+ Tetikleyici ekle</button></div>
+        <p class="note">Örnekler: geri sayım bitince yayını başlat ve kameraya stinger ile geç • video bitince stüdyoya geçiş yap • kamera yayına girince alt bandı (Overlay 1) aç, çıkınca kapat.${evs.includes('cdEnd') ? '' : ' Geri sayım olayları "Geri Sayım" ve "Birazdan Başlıyoruz" grafiklerinde görünür.'}</p>`);
+      $('button.primary', g).onclick = () => { inp.triggers.push({ ev: evs[0], act: 'ovOn', target: null, n: 0, secs: 10 }); renderInputs(); draw(); };
     } else if (cur === 'liste') {
       g.style.gridTemplateColumns = '1fr';
+      g.insertAdjacentHTML('beforeend', `<div class="row"><input type="search" class="ls-q" placeholder="Listede ara…" style="flex:1" value="${esc(inp._lq || '')}"></div>`);
+      g.lastElementChild.querySelector('input').oninput = (e) => { inp._lq = e.target.value; draw(); setTimeout(() => { const i = $('.ls-q', body); if (i) { i.focus(); i.setSelectionRange(i.value.length, i.value.length); } }); };
       const ul = document.createElement('div'); ul.style.cssText = 'display:flex;flex-direction:column;gap:6px';
+      const lq = (inp._lq || '').toLocaleLowerCase('tr');
       inp.list.forEach((it, k) => {
+        if (lq && !it.name.toLocaleLowerCase('tr').includes(lq)) return;
         const r = document.createElement('div'); r.className = 'row';
         r.innerHTML = `<span style="flex:1;${k === inp.idx ? 'color:#19c37d;font-weight:700' : ''}">${k + 1}. ${esc(it.name)}${k === inp.idx ? '  ▶' : ''}</span>
           <button data-l="play">Oynat</button><button data-l="up">▲</button><button data-l="down">▼</button><button data-l="del">✕</button>`;
@@ -1195,12 +1536,45 @@ function openInputSettings(id, tab) {
       g.insertAdjacentHTML('beforeend', `<div class="row"><button class="primary">+ Video Ekle</button></div><p class="note">Bir video bitince sıradaki otomatik oynar. "Döngü" açıksa liste bitince başa döner.</p>`);
       $('button.primary', g).onclick = async () => { const f = await pickFiles('video'); f.forEach(x => inp.list.push({ path: x.path || null, url: x.url || null, name: x.name })); renderInputs(); draw(); };
     } else if (cur === 'tekrar') {
-      row('Yakalanacak süre', `<select style="flex:1">${[5, 8, 10, 15, 20, 30].map(v => `<option ${inp.rp.secs === v ? 'selected' : ''} value="${v}">Son ${v} saniye</option>`).join('')}</select>`);
-      g.lastElementChild.querySelector('select').onchange = e => inp.rp.secs = +e.target.value;
-      row('Oynatma hızı', `<select style="flex:1">${[0.25, 0.5, 0.75, 1].map(v => `<option ${inp.rp.speed === v ? 'selected' : ''} value="${v}">${v}x${v < 1 ? ' (yavaş çekim)' : ''}</option>`).join('')}</select>`);
-      g.lastElementChild.querySelector('select').onchange = e => { inp.rp.speed = +e.target.value; renderInputs(); };
-      row('', '<button class="primary">⏺ Şimdi yakala</button>'); g.lastElementChild.querySelector('button').onclick = () => replayMark(inp);
-      g.insertAdjacentHTML('beforeend', `<span></span><p class="note">Program çıktısı sürekli hafızada tutulur. R tuşu: son anları yakalar ve tekrarı yayına alır. Gol, kill, önemli an için idealdir.</p>`);
+      const rp = inp.rp;
+      row('Yakalanacak süre', `<select style="flex:1">${[5, 8, 10, 15, 20, 30].map(v => `<option ${rp.secs === v ? 'selected' : ''} value="${v}">Son ${v} saniye</option>`).join('')}</select>`);
+      g.lastElementChild.querySelector('select').onchange = e => rp.secs = +e.target.value;
+      row('Oynatma hızı', `<select style="flex:1">${[0.25, 0.5, 0.75, 1].map(v => `<option ${rp.speed === v ? 'selected' : ''} value="${v}">${v}x${v < 1 ? ' (yavaş çekim)' : ''}</option>`).join('')}</select>`);
+      g.lastElementChild.querySelector('select').onchange = e => { rp.speed = +e.target.value; renderInputs(); };
+      const isFirst = S.inputs.find(i => i.type === 'replay') === inp;
+      const srcOpts = [['', '— Yok —'], ['pgm', 'Program çıkışı'], ...S.inputs.filter(i => hasVideo(i) && i.type !== 'replay').map(i => [String(i.id), `${i.n}. ${i.name}`])];
+      [0, 1, 2, 3].forEach(a => {
+        row(`Açı ${a + 1} kaynağı`, `<select style="flex:1" ${isFirst ? '' : 'disabled'}>${srcOpts.map(([v, n]) => `<option value="${v}" ${String(rp.angles[a] ?? '') === v ? 'selected' : ''}>${esc(n)}</option>`).join('')}</select>`);
+        g.lastElementChild.querySelector('select').onchange = e => { const v = e.target.value; rp.angles[a] = v === '' ? null : v === 'pgm' ? 'pgm' : +v; };
+      });
+      if (!isFirst) g.insertAdjacentHTML('beforeend', `<span></span><p class="note">Açı kaynakları ilk Anlık Tekrar kaynağından ayarlanır; bu kaynak aynı kayıtları kullanır.</p>`);
+      chk('Ek açıları 15 fps kaydet (daha az işlemci)', S.settings, 'replayExtraHalf');
+      row('Görünüm', `<button class="${rp.quad ? '' : 'primary'}">Tek açı</button><select>${[0, 1, 2, 3].map(a => `<option value="${a}" ${rp.angle === a ? 'selected' : ''}>Açı ${a + 1}</option>`).join('')}</select><button class="${rp.quad ? 'primary' : ''}">▦ Quad View</button>`);
+      const [b1, asel, b2] = g.lastElementChild.children;
+      b1.onclick = () => { rp.quad = false; rp.last = [-1, -1, -1, -1]; renderInputs(); draw(); }; asel.onchange = () => { replaySetAngle(inp, +asel.value); draw(); }; b2.onclick = () => { replayToggleQuad(inp); draw(); };
+      row('', '<button class="primary">⏺ Şimdi yakala (R)</button>'); g.lastElementChild.querySelector('button').onclick = () => replayMark(inp).then(() => draw());
+      // Olay listesi + arama + çoklu etiket
+      g.insertAdjacentHTML('beforeend', `<label>Olaylar (${rp.events.length})</label><div class="row"><input type="search" class="ev-q" placeholder="Olay / etiket ara…" style="flex:1" value="${esc(inp._evq || '')}"></div>`);
+      const qi = g.lastElementChild.querySelector('.ev-q');
+      const list = document.createElement('div'); list.className = 'ev-list'; g.append(document.createElement('span'), list);
+      const drawList = () => {
+        const q = (inp._evq || '').toLocaleLowerCase('tr');
+        const evs = rp.events.filter(ev => !q || ev.name.toLocaleLowerCase('tr').includes(q) || ev.tags.some(t => t.toLocaleLowerCase('tr').includes(q)));
+        list.innerHTML = evs.length ? evs.map(ev => `<div class="ev ${rp.ev === ev ? 'on' : ''}" data-e="${ev.id}">
+            <button data-a="play" title="Oynat">▶</button>
+            <input class="nm2" value="${esc(ev.name)}" title="Olay adı">
+            <span class="note" style="margin:0">${ev.clock} • ${(ev.len / 1000).toFixed(1)} sn • ${ev.clips.filter(c => c.length).length} açı</span>
+            <input class="tg" value="${esc(ev.tags.join(', '))}" placeholder="etiketler: gol, ofsayt…" title="Birden fazla etiket: virgülle ayır">
+            <button data-a="del" title="Sil">✕</button></div>`).join('') : `<p class="note">${rp.events.length ? 'Aramayla eşleşen olay yok.' : 'Henüz olay yok. R tuşu ya da ⏺ ile yakala.'}</p>`;
+      };
+      qi.oninput = () => { inp._evq = qi.value; drawList(); };
+      list.onclick = (e) => { const r = e.target.closest('[data-e]'); if (!r) return; const ev = rp.events.find(x => x.id === +r.dataset.e); const a = e.target.dataset.a;
+        if (a === 'play') { replayPlay(inp, ev); quickTrans(inp.id, 'fade', 400); drawList(); }
+        if (a === 'del') { rp.events = rp.events.filter(x => x !== ev); if (rp.ev === ev) { rp.ev = null; drawReplayIdle(inp); } drawList(); } };
+      list.oninput = (e) => { const r = e.target.closest('[data-e]'); if (!r) return; const ev = rp.events.find(x => x.id === +r.dataset.e);
+        if (e.target.classList.contains('nm2')) ev.name = e.target.value;
+        if (e.target.classList.contains('tg')) { ev.tags = e.target.value.split(',').map(x => x.trim()).filter(Boolean); if (rp.ev === ev) replayRender(inp); } };
+      drawList();
     } else if (cur === 'konum') {
       row('Hazır konumlar', ['Tam', 'Sol Üst', 'Sağ Üst', 'Sol Alt', 'Sağ Alt', 'Sol Yarı', 'Sağ Yarı'].map(n => `<button>${n}</button>`).join(''));
       const P = { 'Tam': [0, 0, 100, 100], 'Sol Üst': [3, 4, 30, 30], 'Sağ Üst': [67, 4, 30, 30], 'Sol Alt': [3, 66, 30, 30], 'Sağ Alt': [67, 66, 30, 30], 'Sol Yarı': [0, 0, 50, 100], 'Sağ Yarı': [50, 0, 50, 100] };
@@ -1235,7 +1609,7 @@ function openSettings(tab = 'stream') {
   const busy = () => !!(outState.stream || outState.record);
   const body = document.createElement('div');
   const draw = () => {
-    body.innerHTML = `<div class="tabs">${[['stream', 'Yayın'], ['enc', 'Kodlama'], ['rec', 'Kayıt'], ['gen', 'Genel']].map(([k, n]) => `<button data-t="${k}" class="${k === cur ? 'on' : ''}">${n}</button>`).join('')}</div><div id="sp"></div>`;
+    body.innerHTML = `<div class="tabs">${[['stream', 'Yayın'], ['enc', 'Kodlama'], ['rec', 'Kayıt'], ['stinger', 'Stinger'], ['ses', 'Ses / Bus'], ['gen', 'Genel']].map(([k, n]) => `<button data-t="${k}" class="${k === cur ? 'on' : ''}">${n}</button>`).join('')}</div><div id="sp"></div>`;
     $$('.tabs button', body).forEach(b => b.onclick = () => { cur = b.dataset.t; draw(); });
     const sp = $('#sp', body);
     if (cur === 'stream') {
@@ -1282,6 +1656,50 @@ function openSettings(tab = 'stream') {
       $('#r-pick', sp).onclick = async () => { if (!NOVA) return; const d = await NOVA.chooseFolder(); if (d) { st.folder = d; $('#r-dir', sp).value = d; } };
       $('#r-open', sp).onclick = async () => { if (!NOVA) return; NOVA.openFolder(st.folder || await NOVA.defaultFolder()); };
       bind('#r-fmt', 'format'); bind('#r-mode', 'recMode'); bind('#r-vb', 'recbitrate', true);
+    } else if (cur === 'stinger') {
+      sp.innerHTML = `<div class="grid2" id="stg"></div><p class="note">Stinger: kesme noktasında ekranı kapatan animasyonlu geçiş. Hazır animasyonlardan birini seç ya da kendi videonu yükle (saydam arka plan için WebM/VP9 alfa önerilir). Kısayol: Ctrl+F1…F8, panelde S1–S8.</p>`;
+      const g = $('#stg', sp);
+      st.stingers.forEach((x, n) => {
+        const kind = x ? x.kind : 'none';
+        g.insertAdjacentHTML('beforeend', `<label>Stinger ${n + 1}</label><div class="row" data-n="${n}">
+          <select class="k"><option value="none" ${kind === 'none' ? 'selected' : ''}>Boş</option><option value="builtin" ${kind === 'builtin' ? 'selected' : ''}>Hazır animasyon</option><option value="video" ${kind === 'video' ? 'selected' : ''}>Video dosyası</option></select>
+          ${kind === 'builtin' ? `<select class="sty">${Object.entries(STINGER_STYLES).map(([k, v]) => `<option value="${k}" ${x.style === k ? 'selected' : ''}>${v.name}</option>`).join('')}</select><input class="col" type="color" value="${x.color || '#ff2d4b'}">
+            <input class="dur" type="number" min="200" max="5000" step="50" value="${x.dur}" title="Süre (ms)" style="width:80px"><span class="note" style="margin:0">ms</span>` : ''}
+          ${kind === 'video' ? `<button class="pick">Video seç</button><span class="note" style="margin:0;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(x.name || 'seçilmedi')}</span>` : ''}
+          ${kind !== 'none' ? `<span class="note" style="margin:0">Kesme</span><input class="cut" type="number" min="0" max="5000" step="50" value="${x.cut ?? 500}" title="Kesme noktası (ms)" style="width:80px"><button class="try" title="Şimdi önizlemeye geç">▶</button>` : ''}
+        </div>`);
+      });
+      g.onchange = g.oninput = (e) => {
+        const r = e.target.closest('[data-n]'); if (!r) return; const n = +r.dataset.n; let x = st.stingers[n];
+        if (e.target.classList.contains('k') && e.type === 'change') {
+          const k = e.target.value;
+          st.stingers[n] = k === 'none' ? null : k === 'builtin' ? { kind: 'builtin', style: 'serit', color: CAT_COLORS[n % 8], dur: 1000, cut: 500 } : { kind: 'video', path: null, name: '', cut: 500 };
+          renderStingerBar(); draw(); return;
+        }
+        if (!x) return;
+        if (e.target.classList.contains('sty')) x.style = e.target.value;
+        if (e.target.classList.contains('col')) x.color = e.target.value;
+        if (e.target.classList.contains('dur')) { x.dur = +e.target.value; }
+        if (e.target.classList.contains('cut')) x.cut = +e.target.value;
+        renderStingerBar();
+      };
+      g.onclick = async (e) => {
+        const r = e.target.closest('[data-n]'); if (!r) return; const n = +r.dataset.n, x = st.stingers[n];
+        if (e.target.classList.contains('try')) { closeModal(); stingerTo(n); }
+        if (e.target.classList.contains('pick')) {
+          const f = (await pickFiles('video'))[0]; if (!f) return;
+          Object.assign(x, { path: f.path || null, url: f.url || null, name: f.name });
+          const v = stingerVideo(n); v.onloadedmetadata = () => { if (x.cut == null || x.cut === 500) x.cut = Math.round(v.duration * 500); draw(); };
+          renderStingerBar(); draw();
+        }
+      };
+    } else if (cur === 'ses') {
+      sp.innerHTML = `<div class="grid2">
+        <label>Yayın sesi</label><select id="a-str"><option value="M">Master</option><option value="A">Bus A</option><option value="B">Bus B</option></select>
+        <label>Kayıt sesi</label><select id="a-rec"><option value="M">Master</option><option value="A">Bus A</option><option value="B">Bus B</option></select>
+        <label>Kulaklık (izleme)</label><select id="a-mon"><option value="M">Master</option><option value="A">Bus A</option><option value="B">Bus B</option></select>
+      </div><p class="note">Her ses kanalını mikserdeki <b>M / A / B</b> düğmeleriyle Master'a, Bus A'ya veya Bus B'ye yönlendirebilirsin. Örnek: kaydı yorum sesi olmadan almak için mikrofonu sadece Master'a, oyun sesini hem Master hem Bus A'ya ver ve Kayıt sesini Bus A seç. Değişiklik bir sonraki yayın/kayıt başlangıcında geçerli olur.</p>`;
+      bind('#a-str', 'streamBus'); bind('#a-rec', 'recBus'); bind('#a-mon', 'monBus', false, updateMaster);
     } else if (cur === 'gen') {
       sp.innerHTML = `<div class="grid2">
         <label>Çözünürlük</label><select id="g-res"><option value="1920x1080">1920×1080 (1080p)</option><option value="1280x720">1280×720 (720p)</option><option value="2560x1440">2560×1440 (1440p)</option><option value="1080x1920">1080×1920 (Dikey - TikTok/Reels)</option><option value="720x1280">720×1280 (Dikey 720p)</option></select>
@@ -1299,7 +1717,7 @@ function openSettings(tab = 'stream') {
       bind('#g-tt', 'transType', false, () => $('#tr-type').value = st.transType);
       const ap = $('#g-ap', sp); ap.checked = st.autoPause; ap.onchange = () => st.autoPause = ap.checked;
       const au = $('#g-au', sp); au.checked = st.autoUpdate !== false; au.onchange = () => { st.autoUpdate = au.checked; if (au.checked) checkUpdates(false); };
-      const rp = $('#g-rp', sp); rp.checked = st.replayOn; rp.onchange = () => { st.replayOn = rp.checked; if (!rp.checked) RP.frames = []; };
+      const rp = $('#g-rp', sp); rp.checked = st.replayOn; rp.onchange = () => { st.replayOn = rp.checked; if (!rp.checked) replayClear(); };
       bind('#g-rps', 'replaySecs', true);
       const q = $('#g-q', sp);
       st.quick.forEach(x => {
@@ -1335,15 +1753,18 @@ function serialize() {
     app: 'NOVA Canlı', version: 1,
     inputs: S.inputs.map(i => ({
       type: i.type, name: i.name, src: i.src, fit: i.fit, layout: i.layout, crop: i.crop, fx: i.fx, chroma: i.chroma,
-      audio: { vol: i.audio.vol, muted: i.audio.muted, afv: i.audio.afv, comp: i.audio.comp }, loop: i.loop, autoPlay: i.autoPlay, title: i.title,
-      list: i.list?.filter(x => x.path).map(x => ({ path: x.path, name: x.name })), rp: i.rp ? { speed: i.rp.speed, secs: i.rp.secs } : undefined,
-      studio: i.studio,
+      audio: { vol: i.audio.vol, muted: i.audio.muted, afv: i.audio.afv, comp: i.audio.comp, bus: i.audio.bus }, loop: i.loop, autoPlay: i.autoPlay, title: i.title,
+      list: i.list?.filter(x => x.path).map(x => ({ path: x.path, name: x.name })), rp: i.rp ? { speed: i.rp.speed, secs: i.rp.secs, quad: i.rp.quad, angle: i.rp.angle, angles: i.rp.angles.map(a => a === 'pgm' || a == null ? a : S.inputs.findIndex(x => x.id === a)) } : undefined,
+      studio: i.studio, go: i.go, color: i.color,
+      photos: i.photos ? { ...i.photos, list: i.photos.list.filter(x => x.path) } : undefined,
+      triggers: i.triggers?.map(t => ({ ...t, target: t.target == null ? null : S.inputs.findIndex(x => x.id === t.target) })),
       scene: i.scene ? { ...i.scene, bg: S.inputs.findIndex(x => x.id === i.scene.bg), layers: i.scene.layers.map(l => ({ ...l, id: S.inputs.findIndex(x => x.id === l.id) })) } : undefined
     })),
     previewIndex: S.inputs.findIndex(i => i.id === S.previewId),
     programIndex: S.inputs.findIndex(i => i.id === S.programId),
     overlays: S.overlays.map(o => S.inputs.findIndex(i => i.id === o.inputId)),
-    master: { vol: master.vol, muted: master.muted }
+    master: { vol: master.vol, muted: master.muted },
+    buses: { A: { vol: BUS.A.vol, muted: BUS.A.muted }, B: { vol: BUS.B.vol, muted: BUS.B.muted } }
   }, null, 2);
 }
 async function saveProject(asNew) {
@@ -1367,21 +1788,25 @@ async function openProject() {
       else if (d.type === 'screen') inp = await addScreen(d.src.sourceId, d.src.name, d.src.withAudio);
       else if (d.type === 'video' && d.list?.length) inp = addVideo(d.list[0], d.list.slice(1));
       else if (d.type === 'video' && d.src.path) inp = addVideo({ path: d.src.path });
-      else if (d.type === 'replay') { inp = addReplay(); Object.assign(inp.rp, d.rp || {}); }
+      else if (d.type === 'replay') { inp = addReplay(); const { angles, ...rest } = d.rp || {}; Object.assign(inp.rp, rest); inp._rpAngles = angles; }
       else if (d.type === 'image' && d.src.path) inp = addImage({ path: d.src.path });
       else if (d.type === 'audio' && d.src.path) inp = addAudioFile({ path: d.src.path });
       else if (d.type === 'color') inp = addColor(d.src.color, d.src.color2);
       else if (d.type === 'title') inp = addTitle(d.title.template, d.title);
       else if (d.type === 'studio') inp = addStudio(d.studio?.style, d.studio);
+      else if (d.type === 'photos') { const { list, ...o } = d.photos || {}; inp = addPhotos(list || [], o); }
       else if (d.type === 'scene') { inp = addScene(d.scene?.preset); inp._sceneData = d.scene; }
     } catch (e) { toast(`"${d.name}" yüklenemedi: ${e.message || e.name}`, true); }
     if (inp) {
-      Object.assign(inp, { name: d.name, fit: d.fit, layout: d.layout, crop: d.crop, fx: d.fx, chroma: d.chroma, loop: d.loop, autoPlay: d.autoPlay });
+      Object.assign(inp, { name: d.name, fit: d.fit, layout: d.layout, crop: d.crop, fx: d.fx, chroma: d.chroma, loop: d.loop, autoPlay: d.autoPlay, go: d.go || 'quick', color: d.color || null });
+      if (d.triggers) inp._trg = d.triggers;
       Object.assign(inp.audio, d.audio); if (inp.a) applyComp(inp); updateAudioGains(inp, true);
       const m = mediaEl(inp); if (m) m.loop = inp.loop && (!inp.list || inp.list.length === 1);
     }
     made.push(inp);
   }
+  made.forEach(inp => { if (inp?._trg) { inp.triggers = inp._trg.map(t => ({ ...t, target: t.target == null || t.target < 0 ? null : made[t.target]?.id ?? null })); delete inp._trg; } });
+  made.forEach(inp => { if (inp?._rpAngles) { inp.rp.angles = inp._rpAngles.map(a => a === 'pgm' || a == null ? a ?? null : made[a]?.id ?? null); delete inp._rpAngles; } });
   made.forEach(inp => { // sahne referanslarını yeni kimliklere çevir
     if (!inp?._sceneData) return; const d = inp._sceneData; delete inp._sceneData;
     Object.assign(inp.scene, d, { bg: made[d.bg]?.id ?? null, layers: d.layers.map(l => ({ ...l, id: made[l.id]?.id ?? null })) });
@@ -1389,7 +1814,9 @@ async function openProject() {
   S.previewId = made[p.previewIndex]?.id ?? S.previewId;
   S.programId = made[p.programIndex]?.id ?? null;
   (p.overlays || []).forEach((k, n) => { S.overlays[n].inputId = made[k]?.id ?? null; S.overlays[n].on = false; });
-  if (p.master) { Object.assign(master, p.master); updateMaster(); }
+  if (p.master) Object.assign(master, p.master);
+  if (p.buses) for (const k of ['A', 'B']) if (p.buses[k]) Object.assign(BUS[k], p.buses[k]);
+  updateMaster();
   renderInputs(); renderMixer(); renderOverlays();
   toast('Proje açıldı.');
 }
@@ -1438,9 +1865,11 @@ const ACTIONS = {
     <tr><td><kbd>1</kbd> … <kbd>9</kbd></td><td>Kaynağı önizlemeye al</td></tr>
     <tr><td><kbd>Shift</kbd> + <kbd>1</kbd> … <kbd>9</kbd></td><td>Kaynağı doğrudan programa kes</td></tr>
     <tr><td><kbd>Ctrl</kbd> + <kbd>1</kbd> … <kbd>9</kbd></td><td>Kaynağa hızlı geçiş</td></tr>
-    <tr><td><kbd>F1</kbd> … <kbd>F4</kbd></td><td>Overlay 1–4 aç/kapa</td></tr>
+    <tr><td><kbd>F1</kbd> … <kbd>F8</kbd></td><td>Overlay 1–8 aç/kapa</td></tr>
+    <tr><td><kbd>Ctrl</kbd> + <kbd>F1</kbd> … <kbd>F8</kbd></td><td>Stinger 1–8 ile önizlemeye geç</td></tr>
     <tr><td><kbd>B</kbd></td><td>Siyaha karart (FTB)</td></tr>
-    <tr><td><kbd>R</kbd></td><td>Anlık tekrar: son anları yakala ve yayına al</td></tr>
+    <tr><td><kbd>R</kbd></td><td>Anlık tekrar: son anları yakala (yeni olay) ve yayına al</td></tr>
+    <tr><td><kbd>Q</kbd> / <kbd>Alt</kbd>+<kbd>1</kbd>…<kbd>4</kbd></td><td>Tekrarda Quad View / gösterilen açıyı seç</td></tr>
     <tr><td><kbd>N</kbd> / <kbd>Shift</kbd>+<kbd>N</kbd></td><td>Yayındaki alt bantta sonraki / önceki isim, altyazıda sonraki satır</td></tr>
     <tr><td><kbd>Ctrl</kbd> + <kbd>R</kbd></td><td>Kayıt başlat/durdur</td></tr>
     <tr><td><kbd>Ctrl</kbd> + <kbd>S</kbd></td><td>Projeyi kaydet</td></tr>
@@ -1458,17 +1887,19 @@ document.addEventListener('keydown', e => {
   const k = e.key;
   if (k === 'Enter') { e.preventDefault(); cut(); }
   else if (k === ' ') { e.preventDefault(); transition(); }
-  else if (/^F[1-4]$/.test(k)) { e.preventDefault(); toggleOverlay(+k[1] - 1); }
+  else if (/^F[1-8]$/.test(k)) { e.preventDefault(); if (e.ctrlKey) stingerTo(+k[1] - 1); else toggleOverlay(+k[1] - 1); }
   else if (k === 'F12') { e.preventDefault(); snapshot(); }
   else if (k.toLowerCase() === 'b' && !e.ctrlKey) ACTIONS.ftb();
   else if (k.toLowerCase() === 'r' && !e.ctrlKey) replayHotkey();
+  else if (k.toLowerCase() === 'q' && !e.ctrlKey) { const r = S.inputs.find(i => i.type === 'replay'); if (r) replayToggleQuad(r); }
+  else if (e.altKey && /^Digit[1-4]$/.test(e.code)) { e.preventDefault(); const r = S.inputs.find(i => i.type === 'replay'); if (r) replaySetAngle(r, +e.code.slice(-1) - 1); }
   else if (k.toLowerCase() === 'n' && !e.ctrlKey) { const on = S.inputs.filter(i => i.onAir && titleHasList(i) && titleItemCount(i.title)); on.forEach(i => titleNext(i, e.shiftKey ? -1 : 1)); if (!on.length) toast('Yayında isim listeli grafik yok.', true); }
   else if (e.ctrlKey && k.toLowerCase() === 's') { e.preventDefault(); saveProject(e.shiftKey); }
   else if (e.ctrlKey && k.toLowerCase() === 'o') { e.preventDefault(); openProject(); }
   else if (e.ctrlKey && k.toLowerCase() === 'r') { e.preventDefault(); toggleRecord(); }
   else {
     const m = /^(Digit|Numpad)([1-9])$/.exec(e.code);
-    if (m) {
+    if (m && !e.altKey) {
       const inp = S.inputs[+m[2] - 1]; // kart numarası
       if (!inp || !hasVideo(inp)) return;
       if (e.shiftKey) quickCut(inp.id); else if (e.ctrlKey) { e.preventDefault(); quickTrans(inp.id); } else toPreview(inp.id);
@@ -1520,7 +1951,7 @@ if (NOVA?.onUpdateStatus) NOVA.onUpdateStatus((st, d) => {
   $('#tr-type').value = S.settings.transType;
   $('#tr-dur').value = S.settings.transMs;
   $('#monitor-tog').checked = S.settings.monitor;
-  applyResolution(); updateMaster(); renderQuick(); renderOverlays(); renderMixer(); renderInputs();
+  applyResolution(); updateMaster(); renderQuick(); renderOverlays(); renderStingerBar(); renderCatFilter(); renderMixer(); renderInputs();
   // Başlangıç sahnesi: arka plan + logo yazısı
   const bg = addColor('#0b1230', '#3a0d2e'); bg.name = 'Arka Plan';
   const t = addTitle('baslik', { line1: 'NOVA CANLI', line2: 'Yayına hazır' });
@@ -1529,5 +1960,5 @@ if (NOVA?.onUpdateStatus) NOVA.onUpdateStatus((st, d) => {
   $('.credit').textContent = `NOVA Canlı v${APP_VERSION} • Samet Şahin (@xsametsahinx)`;
   if (S.settings.autoUpdate !== false) { setTimeout(() => checkUpdates(false), 6000); setInterval(() => { if (S.settings.autoUpdate !== false && UPD.st !== 'ready') checkUpdates(false); }, 3 * 3600 * 1000); }
   toast('NOVA Canlı hazır. "+ Kaynak Ekle" ile başla.');
-  window.__nova = { addStudio, addScene, applyScenePreset, titleNext, pickTitle, pickStudio, pickScene, openInputSettings, addReplay, replayMark, replayHotkey, RP, S, cut, transition, toggleOverlay, startOutput, stopOutput, addTitle, addColor, addVideo, addImage, outState, prog }; // test erişimi
+  window.__nova = { addPhotos, stingerTo, runTrigger, fireTriggers, replayToggleQuad, replaySetAngle, replayPlay, goAction, BUS, addStudio, addScene, applyScenePreset, titleNext, pickTitle, pickStudio, pickScene, openInputSettings, addReplay, replayMark, replayHotkey, RP, S, cut, transition, toggleOverlay, startOutput, stopOutput, addTitle, addColor, addVideo, addImage, outState, prog }; // test erişimi
 })();

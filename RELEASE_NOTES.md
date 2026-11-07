@@ -1,23 +1,18 @@
-## NOVA Canlı v1.2.0
+## NOVA Canlı v1.3.0 — vMix 29 tarzı güncelleme
 
-**İndir:** aşağıdaki `NOVA-Canli-Setup-1.2.0.exe` dosyasını indirip kur. Bu sürümden itibaren program **kendini otomatik günceller** — yeni sürüm çıkınca arka planda iner, program kapanınca kurulur.
+v1.2.0 kullanıyorsan bu sürüm **otomatik iner**, program kapanınca kurulur. Yeni kurulum için aşağıdaki `NOVA-Canli-Setup-1.3.0.exe` dosyasını indir.
 
 ### Yenilikler
-- **33 grafik şablonu** (9'dan 33'e), kategorilere ayrıldı:
-  - *Alt Bant:* klasik, modern, cam, neon, sade, röportaj (2 kişi), konum etiketi
-  - *Haber:* kayan yazı, haber alt bandı (saatli), son dakika, hava durumu (animasyonlu ikonlar), alıntı/söz
-  - *Spor:* skor tabelası, futbol skorbord (çalışan maç saati, takım renkleri), tam ekran maç sonucu
-  - *Yayın ekranı:* birazdan başlıyoruz (geri sayımlı), kısa ara (BRB), yayın sona erdi (sosyal hesaplarla), tam ekran başlık, geri sayım
-  - *Sosyal medya:* abone ol animasyonu, sosyal medya döngüsü, izleyici mesajı, destek/bağış uyarısı (konfetili)
-  - *Bilgi & araç:* CANLI rozeti, filigran, şimdi çalıyor, anket/oylama, hedef çubuğu, saat, kronometre, **altyazı**
-- **İsim listesi:** alt bantlara birden fazla isim gir (`Ad | Unvan`), `N` tuşu veya ⏭ ile sıradakine geç.
-- **Altyazı:** satır satır elle ilerletme ya da **SRT/VTT dosyası** yükleyip zamanlı oynatma.
-- **11 sanal stüdyo** (hareketli arka plan): haber stüdyosu, talk show, oyun/neon, teknoloji, podcast, spor/stadyum, konser sahnesi, dalgalar, ışık parçacıkları, uzay, kurumsal. Renk, yazı ve hız ayarlanabilir.
-- **Sahne / çoklu görüntü:** PIP (sağ/sol), yan yana, 2x2 ızgara, 1 büyük + 2 küçük, üçlü, haber, röportaj, oyun yayını düzenleri; çerçeve, köşe yuvarlaklığı, gölge, arka plan olarak stüdyo.
-- **Otomatik güncelleme:** üst çubukta indirme durumu ve "GÜNCELLE" düğmesi, Hakkında'da "Güncellemeleri denetle", Ayarlar > Genel'de aç/kapa.
-- **Performans:** yetişemeyen kareler atlanır (arayüz donmaz), boştaki grafik önizlemeleri daha seyrek çizilir.
-- Dikey (9:16) çıkışta grafikler artık taşmıyor.
-
-> v1.1.0 kullanıyorsan bu sürümü bir kez elle kurman gerekiyor; sonraki sürümler otomatik gelecek.
+- **8 overlay kanalı** (4'ten 8'e): F1–F8 kısayolları, her kaynak kartında 1–8 düğmeleri.
+- **8 stinger geçişi:** 7 hazır animasyon (çapraz şerit, logo patlaması, perde, mürekkep, kare mozaik, ışık patlaması, hızlı kaydırma) ya da kendi stinger videon (saydam WebM desteklenir), ayarlanabilir süre ve kesme noktası. Panelde S1–S8, kısayol Ctrl+F1–F8.
+- **AlfaGeçiş (AlphaFade):** saydam içerikte daha temiz çapraz geçiş.
+- **Yeni kaynak kartı:** sağ üstte kapatma (✕), videolarda döngü düğmesi (⟲), **GO düğmesi** (her kaynak için seçilebilir eylem: hızlı geçiş, kes, herhangi bir geçiş ya da stinger).
+- **Renk kategorileri + kaynak arama:** kaynakları renkle grupla, üstten renge veya isme göre filtrele.
+- **Çok açılı anlık tekrar:** 4 açıya kadar (Program + kameralar) aynı anda kayıt, her yakalama bir **olay**; olaylara birden fazla etiket ekle, olay listesinde ara, **Quad View** ile 4 açıyı birden göster. Kısayollar: R (yakala), Q (Quad), Alt+1–4 (açı). Ek açılar isteğe bağlı 15 fps (daha az işlemci).
+- **Ses bus'ları:** Master + Bus A + Bus B. Her kanal M/A/B düğmeleriyle yönlendirilir; yayın, kayıt ve kulaklık için ayrı bus seçilebilir (örn. yorum sesi olmadan kayıt).
+- **Tetikleyiciler:** "yayına girince / çıkınca / video bitince / geri sayım bitince / geri sayımda X sn kala" olaylarına eylem bağla (kes, geçiş, stinger, overlay aç/kapa, oynat, kaydı/yayını başlat-durdur, karart, tekrar).
+- **Fotoğraf slayt gösterisi:** çok sayıda fotoğraf, süre, yumuşak geçiş, Ken Burns yakınlaşması, karışık sıra, dosya adıyla arama.
+- **Oynatma listesinde arama.**
+- Geri sayım grafikleri artık kaynak **ilk kez yayına girdiğinde** başlar.
 
 Geliştirici: Samet Şahin — @xsametsahinx

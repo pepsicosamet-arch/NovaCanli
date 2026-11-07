@@ -91,8 +91,10 @@ const TitleRenderer = {
         break;
       }
       case 'geri': {
-        if (!input._cdStart || input._cdMinutes !== d.minutes) { input._cdStart = performance.now(); input._cdMinutes = d.minutes; }
-        const left = Math.max(0, (Number(d.minutes) || 0) * 60 - (performance.now() - input._cdStart) / 1000);
+        // geri sayım, kaynak ilk kez yayına girdiğinde başlar
+        if (input._cdMinutes !== d.minutes) { input._cdStart = null; input._cdMinutes = d.minutes; }
+        if (!input._cdStart && input.onAir) input._cdStart = performance.now();
+        const left = Math.max(0, (Number(d.minutes) || 0) * 60 - (input._cdStart ? (performance.now() - input._cdStart) / 1000 : 0));
         const mm = String(Math.floor(left / 60)).padStart(2, '0'), ss = String(Math.floor(left % 60)).padStart(2, '0');
         ctx.globalAlpha = k; ctx.textAlign = 'center';
         ctx.fillStyle = 'rgba(0,0,0,0.55)'; ctx.fillRect(0, 0, W, H);
@@ -450,8 +452,9 @@ const TITLE_EXTRA = {
     c.globalAlpha = k;
     const mins = Number(d.minutes) || 0;
     if (mins > 0) {
-      if (!inp._cdStart || inp._cdMinutes !== d.minutes) { inp._cdStart = performance.now(); inp._cdMinutes = d.minutes; }
-      const left = Math.max(0, mins * 60 - (performance.now() - inp._cdStart) / 1000);
+      if (inp._cdMinutes !== d.minutes) { inp._cdStart = null; inp._cdMinutes = d.minutes; }
+      if (!inp._cdStart && inp.onAir) inp._cdStart = performance.now();
+      const left = Math.max(0, mins * 60 - (inp._cdStart ? (performance.now() - inp._cdStart) / 1000 : 0));
       c.font = R.font(130 * s, 900); c.fillStyle = acc; c.fillText(TR.clock(left), W / 2, H / 2 + 140 * s);
     } else {
       for (let i = 0; i < 3; i++) { const a = 0.3 + 0.7 * Math.max(0, Math.sin(t * 4 - i * 0.7)); c.globalAlpha = k * a; c.fillStyle = acc; c.beginPath(); c.arc(W / 2 + (i - 1) * 50 * s, H / 2 + 110 * s, 13 * s, 0, 7); c.fill(); }

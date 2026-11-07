@@ -46,6 +46,7 @@
     <div class="tp-row">
       <select id="tr-type">
         <option value="fade">Geçiş (Fade)</option>
+        <option value="alphafade">AlfaGeçiş (AlphaFade)</option>
         <option value="dip">Siyaha Geç</option>
         <option value="dipw">Beyaza Geç</option>
         <option value="wipe">Silme (Wipe)</option>
@@ -61,9 +62,12 @@
       <input id="tbar" type="range" min="0" max="1000" value="0" orient="vertical">
     </div>
     <div class="tp-quick" id="quick"></div>
+    <div class="tp-label">STINGER <small>(sağ tık: ayarla)</small></div>
+    <div class="stingers" id="stingers"></div>
     <div class="tp-row">
       <button id="btn-ftb" data-act="ftb" title="B">FTB</button>
     </div>
+    <div class="tp-label">OVERLAY</div>
     <div class="ovl-row" id="ovl-row"></div>
   </div>
 
@@ -84,6 +88,7 @@
           <button data-add="screen">Ekran / Pencere / Oyun</button>
           <button data-add="video">Video / Oynatma Listesi</button>
           <button data-add="image">Resim / Logo</button>
+          <button data-add="photos">Fotoğraf Slayt Gösterisi</button>
           <button data-add="color">Renk / Arka Plan</button>
           <button data-add="title">Grafik / Alt Bant / Altyazı (33 şablon)</button>
           <button data-add="studio">Sanal Stüdyo (hareketli arka plan)</button>
@@ -93,7 +98,9 @@
           <button data-add="replay">Anlık Tekrar (Yavaş Çekim)</button>
         </div>
       </div>
-      <span class="hint">Dosyaları sürükleyip bırakabilirsin • Tıkla: Önizleme • Çift tıkla: Ayarlar</span>
+      <input id="inp-search" type="search" placeholder="Kaynak ara…" autocomplete="off">
+      <div class="cat-filter" id="cat-filter"></div>
+      <span class="hint">Tıkla: Önizleme • Çift tıkla: Ayarlar</span>
     </div>
     <div class="inputs" id="inputs"></div>
   </div>
@@ -118,6 +125,7 @@
 <script src="js/chroma.js"></script>
 <script src="js/titles.js"></script>
 <script src="js/studio.js"></script>
+<script src="js/stingers.js"></script>
 <script src="js/app.js"></script>
 </body>
 </html>
