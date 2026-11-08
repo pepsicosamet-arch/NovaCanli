@@ -11,7 +11,7 @@ Geliştirici: **Samet Şahin (@xsametsahinx)**
 
 [![NOVA Canlı tanıtım](docs/onizleme.gif)](docs/NOVA-Canli-Tanitim.mp4)
 
-▶ **[Tanıtım filmini izle (53 sn, 1080p)](docs/NOVA-Canli-Tanitim.mp4)**
+▶ **[Tanıtım filmini izle (62 sn, 1080p) — v1.5 3D haber stüdyoları](docs/NOVA-Canli-Tanitim.mp4)**
 
 ![NOVA Canlı arayüzü](docs/ekran.jpg)
 
