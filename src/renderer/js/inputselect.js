@@ -21,11 +21,13 @@ const IS_ICONS = {
   studio: '<path d="M3 20h18M5 20l2-7h10l2 7M9 13V8h6v5"/><path d="M4 4l4 3M20 4l-4 3"/>',
   scene: '<rect x="3" y="4" width="8" height="7" rx="1"/><rect x="13" y="4" width="8" height="7" rx="1"/><rect x="3" y="13" width="8" height="7" rx="1"/><rect x="13" y="13" width="8" height="7" rx="1"/>',
   web: '<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 9h18"/><circle cx="6" cy="6.5" r=".6" fill="currentColor"/><circle cx="8.5" cy="6.5" r=".6" fill="currentColor"/>',
-  draw: '<path d="M4 20l4-1 11-11-3-3L5 16z"/><path d="M14 6l3 3"/>'
+  draw: '<path d="M4 20l4-1 11-11-3-3L5 16z"/><path d="M14 6l3 3"/>',
+  vset: '<path d="M12 3l9 5v8l-9 5-9-5V8z"/><path d="M3 8l9 5 9-5M12 13v8"/>'
 };
 const isIcon = (k) => `<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">${IS_ICONS[k] || ''}</svg>`;
 
 const INPUT_TYPES = [
+  { k: 'vset', name: '3D Haber Stüdyosu', desc: 'Gerçek zamanlı 3D sanal haber stüdyosu: ışıklı masa, LED video duvarı, yansımalı zemin, 7 kamera açısı ve yumuşak kamera hareketleri. Sunucuyu yeşil perdeyle masanın arkasına yerleştir.' },
   { k: 'video', name: 'Video', desc: 'Video dosyası: MP4, MOV, MKV, WebM, M4V. Birden fazla dosya ayrı kaynak olarak eklenir.' },
   { k: 'list', name: 'Liste', desc: 'Birden fazla video tek kaynakta art arda oynar (oynatma listesi).' },
   { k: 'camera', name: 'Kamera', desc: 'Web kamerası, yakalama kartı (HDMI/SDI), sanal kamera. Çözünürlük, kare hızı ve ses aygıtı seçilebilir.' },
@@ -125,6 +127,37 @@ function buildDelayConfig(g, d, selfId, after) {
   F.sel('Kaynak', d, 'src', opts, (v) => { d.src = v ? +v : null; after?.(); });
   F.rng('Gecikme', d, 'ms', 100, 10000, 100, v => `${(v / 1000).toFixed(1)} sn`);
   F.note('Görüntü hafızada tutulur; 10 saniyeye kadar gecikme verilebilir. Ses gecikmesi için ses kaynağını mikserde ayrıca ayarla.');
+}
+
+// ---- 3D Haber Stüdyosu ayarları (hem Kaynak Seç'te hem kaynak ayarlarında)
+function buildVSetConfig(g, v, selfId, onName, onChange) {
+  const F = formHelpers(g), VS = window.VSet;
+  if (!VS) { F.note('3D motor yükleniyor, birkaç saniye sonra tekrar aç.'); return; }
+  const srcs = (pred) => [['', 'Yok'], ...S.inputs.filter(i => i.id !== selfId && i.type !== 'vset' && hasVideo(i) && pred(i)).map(i => [String(i.id), `${i.n}. ${i.name}`])];
+  let accIn, chIn;
+  F.sel('Stüdyo', v, 'style', Object.entries(VS.STYLES).map(([k, s]) => [k, s.name]), () => {
+    const st = VS.STYLES[v.style]; v.accent = st.accent; v.channel = st.channel; v.bloom = null;
+    if (accIn) accIn.value = st.accent; if (chIn) chIn.value = st.channel; onName?.();
+  });
+  accIn = F.txt('Vurgu rengi', v, 'accent', 'color');
+  chIn = F.txt('Kanal adı', v, 'channel', 'text', null, 'NOVA HABER');
+  F.txt('Kayan yazı etiketi', v, 'tickerLabel', 'text', null, 'GÜNDEM');
+  F.txt('Kayan yazı', v, 'ticker', 'text', null, 'Haber başlıkları…');
+  const sh = F.row('Kamera açısı', `<div class="vs-shots">${Object.entries(VS.SHOTS).map(([k, s]) => `<button data-k="${k}" class="${v.shot === k ? 'on' : ''}">${esc(s.name)}</button>`).join('')}</div>`);
+  sh.onclick = (e) => { const b = e.target.closest('button'); if (!b) return; v.shot = b.dataset.k; sh.querySelectorAll('button').forEach(x => x.classList.toggle('on', x === b)); onChange?.(); };
+  F.sel('Kamera hareketi', v, 'moveMs', [[0, 'Kesme (anında)'], [800, 'Hızlı (0.8 sn)'], [1500, 'Normal (1.5 sn)'], [3000, 'Yavaş (3 sn)']]);
+  F.chk('Hafif kamera salınımı (canlı his)', v, 'drift');
+  F.sel('Sunucu (kamera)', v, 'talent', srcs(() => true), (x) => { v.talent = x ? +x : null; });
+  F.note('Sunucuyu yeşil/mavi perde önünde çek ve o kameranın ayarlarından <b>Chroma Key</b>\'i aç; masanın arkasında görünür.');
+  F.rng('Sunucu yatay', v, 'talentX', -1.5, 1.5, 0.02, x => x.toFixed(2));
+  F.rng('Sunucu dikey', v, 'talentY', -0.6, 0.6, 0.01, x => x.toFixed(2));
+  F.rng('Sunucu boyutu', v, 'talentScale', 0.6, 1.6, 0.01, x => Math.round(x * 100) + '%');
+  F.sel('Video duvarı', v, 'wallMode', [['graphics', 'Stüdyo grafikleri (dünya, grafikler…)'], ['source', 'Bir kaynak göster (video, ekran, kamera)']]);
+  F.sel('Duvar kaynağı', v, 'screen', srcs(() => true), (x) => { v.screen = x ? +x : null; if (x) v.wallMode = 'source'; });
+  if (v.bloom == null) v.bloom = VS.STYLES[v.style].bloom;
+  F.rng('Işık parlaması', v, 'bloom', 0, 1.5, 0.05, x => x.toFixed(2));
+  F.rng('Pozlama', v, 'exposure', 0.5, 1.6, 0.02, x => x.toFixed(2));
+  F.sel('Kalite', v, 'quality', [['high', 'Yüksek (güçlü ekran kartı)'], ['mid', 'Orta'], ['low', 'Düşük (dizüstü)']]);
 }
 
 // ---- Telestratör çizim tahtası (kaynak ayarlarında)
@@ -484,6 +517,30 @@ const PAGES = {
       if (!NOVA?.webOpen) formHelpers(g).note('<b>Not:</b> Web Tarayıcı kaynağı masaüstü uygulamasında çalışır.');
     },
     ok(d) { if (!need(isNet(d.cfg.url) && d.cfg.url.length > 10, 'http:// veya https:// ile başlayan bir adres gir.')) return false; return addWeb({ ...d.cfg }); }
+  },
+  vset: {
+    async render(g, d) {
+      g.style.gridTemplateColumns = '1fr';
+      if (!window.VSet) { formHelpers(g).note('3D motor yükleniyor…'); await new Promise(r => { const t = setInterval(() => { if (window.VSet) { clearInterval(t); r(); } }, 150); setTimeout(() => { clearInterval(t); r(); }, 8000); }); g.innerHTML = ''; }
+      if (!window.VSet) { formHelpers(g).note('3D motor yüklenemedi (ekran kartı WebGL desteği gerekli).'); return; }
+      d.key = d.key || 'merkez'; if (d.editAfter == null) d.editAfter = 'vset';
+      const grid = document.createElement('div'); grid.className = 'pick is-pick'; g.appendChild(grid);
+      grid.innerHTML = Object.entries(VSet.STYLES).map(([k, s]) => `<button data-k="${k}" class="${d.key === k ? 'sel' : ''}"><img alt=""><span>${esc(s.name)}</span></button>`).join('');
+      grid.onclick = (e) => { const b = e.target.closest('button'); if (!b) return; d.key = b.dataset.k; grid.querySelectorAll('button').forEach(x => x.classList.toggle('sel', x === b)); };
+      grid.ondblclick = () => $('.isel-foot .ok').click();
+      const g2 = document.createElement('div'); g2.className = 'grid2'; g.appendChild(g2); const F = formHelpers(g2);
+      d.talent = d.talent ?? (S.inputs.find(i => i.type === 'camera')?.id ?? '');
+      F.sel('Sunucu (kamera)', d, 'talent', [['', 'Şimdilik yok'], ...S.inputs.filter(i => hasVideo(i) && i.type !== 'vset').map(i => [String(i.id), `${i.n}. ${i.name}`])]);
+      overlayRow(F, d); F.sel('Sonra', d, 'editAfter', [['vset', 'Stüdyo ayarlarını aç'], ['', 'Hiçbir şey yapma']]);
+      F.note('<span class="vs-prep">Önizlemeler hazırlanıyor… </span>Gerçek zamanlı 3D, ekran kartını kullanır. Sunucuyu yeşil perde önünde çekip kamerada Chroma Key açarsan masanın arkasında görünür.');
+      for (const b of grid.querySelectorAll('button')) {
+        if (!grid.isConnected) break;
+        try { b.querySelector('img').src = await VSet.snapshot(b.dataset.k, 480, 270, 'genis'); } catch (e) { console.warn(e); }
+        await new Promise(r => setTimeout(r, 30));
+      }
+      g2.querySelector('.vs-prep')?.remove();
+    },
+    ok(d) { return addVSet(d.key, { talent: d.talent === '' || d.talent == null ? null : +d.talent }); }
   },
   draw: {
     render(g, d) {

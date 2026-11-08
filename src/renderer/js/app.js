@@ -40,9 +40,9 @@ const PLATFORMS = {
   'Özel': ''
 };
 const TR_NAMES = { cut: 'Kes', fade: 'Geçiş', alphafade: 'AlfaGeçiş', dip: 'Siyah', dipw: 'Beyaz', wipe: 'Silme', slide: 'Kaydır', push: 'İt', zoom: 'Yakınlaş', circle: 'Daire' };
-const APP_VERSION = '1.4.0';
+const APP_VERSION = '1.5.0';
 const GITHUB_URL = 'https://github.com/pepsicosamet-arch/NovaCanli';
-const TYPE_NAMES = { web: 'WEB', delay: 'GECİKME', draw: 'ÇİZİM', photos: 'FOTO', studio: 'STÜDYO', scene: 'SAHNE', replay: 'TEKRAR', camera: 'KAMERA', screen: 'EKRAN', video: 'VİDEO', image: 'RESİM', color: 'RENK', title: 'GRAFİK', mic: 'MİKROFON', audio: 'SES' };
+const TYPE_NAMES = { vset: '3D STÜDYO', web: 'WEB', delay: 'GECİKME', draw: 'ÇİZİM', photos: 'FOTO', studio: 'STÜDYO', scene: 'SAHNE', replay: 'TEKRAR', camera: 'KAMERA', screen: 'EKRAN', video: 'VİDEO', image: 'RESİM', color: 'RENK', title: 'GRAFİK', mic: 'MİKROFON', audio: 'SES' };
 
 let S = {
   settings: structuredClone(DEFAULTS),
@@ -326,7 +326,7 @@ const TRIG_ACTIONS = {
   ovOn: 'Overlay aç', ovOff: 'Overlay kapat', ovToggle: 'Overlay aç/kapa',
   play: 'Oynat', pause: 'Duraklat', restart: 'Başa sar', next: 'Listede sonraki',
   recStart: 'Kaydı başlat', recStop: 'Kaydı durdur', streamStart: 'Yayını başlat', streamStop: 'Yayını durdur',
-  ftbOn: 'Siyaha karart', ftbOff: 'Karartmayı kaldır', replay: 'Anlık tekrar yakala'
+  ftbOn: 'Siyaha karart', ftbOff: 'Karartmayı kaldır', replay: 'Anlık tekrar yakala', vshot: '3D stüdyo kamera açısı'
 };
 function trigEventsFor(inp) {
   const e = ['onIn', 'onOut'];
@@ -359,6 +359,7 @@ function runTrigger(inp, tr) {
     case 'ftbOn': S.ftb.on = true; $('#btn-ftb').classList.add('on'); break;
     case 'ftbOff': S.ftb.on = false; $('#btn-ftb').classList.remove('on'); break;
     case 'replay': replayHotkey(); break;
+    case 'vshot': if (tgt.type === 'vset') vsetShot(tgt, Object.keys(window.VSet?.SHOTS || {})[n]); break;
   }
   toast(`Tetikleyici: ${inp.name} → ${TRIG_ACTIONS[tr.act]}${tgt && tgt !== inp ? ' (' + tgt.name + ')' : ''}`);
 }
@@ -478,6 +479,44 @@ function renderDraw(inp) {
   const c = inp.el; if (c.width !== W || c.height !== H) { c.width = W; c.height = H; }
   const x = c.getContext('2d'); x.clearRect(0, 0, W, H); drawStrokes(x, inp.draw.strokes, W, H);
 }
+
+// ---- 3D Sanal Haber Stüdyosu (Three.js, js/vset.js)
+function addVSet(style = 'merkez', cfg) {
+  const inp = baseInput('vset', '3D Stüdyo');
+  inp.vset = Object.assign({ style, accent: null, channel: null, ticker: 'NOVA Canlı ile profesyonel haber yayını • Gündemdeki gelişmeler • Hava durumu ve trafik',
+    tickerLabel: 'GÜNDEM', shot: 'genis', moveMs: 1500, drift: true, talent: S.inputs.find(i => i.type === 'camera')?.id ?? null, talentX: 0, talentY: 0, talentScale: 1,
+    wallMode: 'graphics', screen: null, bloom: null, exposure: 1, quality: 'high' }, cfg || {});
+  const st = window.VSet?.STYLES[inp.vset.style];
+  if (st) { inp.vset.accent = inp.vset.accent || st.accent; inp.vset.channel = inp.vset.channel || st.channel; inp.name = '3D: ' + st.name; }
+  inp.el = document.createElement('canvas'); inp.el.width = W; inp.el.height = H;
+  inp.fit = 'stretch';
+  return registerInput(inp);
+}
+function vsetSrc(inp, key, id, w, h, t) {
+  const src = byId(id); if (!src || src.type === 'vset' || !hasVideo(src)) return null;
+  inp._vsrc = inp._vsrc || {}; let c = inp._vsrc[key];
+  if (!c) { c = inp._vsrc[key] = document.createElement('canvas'); c.width = w; c.height = h; }
+  const x = c.getContext('2d'); x.clearRect(0, 0, w, h);
+  if (key === 'screen') { x.fillStyle = '#000'; x.fillRect(0, 0, w, h); }
+  drawContent(x, src, 1, 0, 0, w, h, t, key === 'talent' ? 'stretch' : 'cover');
+  return c;
+}
+function renderVSet(inp, t) {
+  if (!window.VSet) {
+    const c = inp.el, x = c.getContext?.('2d'); if (!x) return;
+    x.fillStyle = '#05070c'; x.fillRect(0, 0, c.width, c.height); x.fillStyle = '#8a93a8'; x.font = `600 ${c.height / 22}px Segoe UI, Arial`; x.textAlign = 'center'; x.textBaseline = 'middle'; x.fillText('3D stüdyo yükleniyor…', c.width / 2, c.height / 2); return;
+  }
+  const st = VSet.STYLES[inp.vset.style]; if (!inp.vset.accent) inp.vset.accent = st.accent; if (!inp.vset.channel) inp.vset.channel = st.channel;
+  try { inp.el = VSet.render(inp, W, H, t / 1000, (key, id, w, h) => vsetSrc(inp, key, id, w, h, t)); }
+  catch (e) { if (!inp._vErr) { inp._vErr = true; toast('3D stüdyo çizilemedi: ' + e.message, true); console.error(e); } }
+}
+function vsetShot(inp, key) {
+  const keys = Object.keys(window.VSet?.SHOTS || {}); if (!keys.length) return;
+  inp.vset.shot = key || keys[(keys.indexOf(inp.vset.shot) + 1) % keys.length];
+  const b = $(`#inputs .inp[data-id="${inp.id}"] button[data-b=vshot]`); if (b) b.title = 'Kamera açısı: ' + VSet.SHOTS[inp.vset.shot].name;
+  toast(`${inp.name}: ${VSet.SHOTS[inp.vset.shot].name}`);
+}
+window.addEventListener('vset-ready', () => S.inputs.forEach(i => { if (i.type === 'vset') { const st = VSet.STYLES[i.vset.style]; if (i.name === '3D Stüdyo') i.name = '3D: ' + st.name; } }));
 
 function addStudio(style = 'haber', data) {
   const st = STUDIO_STYLES[style] || STUDIO_STYLES.haber;
@@ -680,6 +719,7 @@ function removeInput(id) {
   const m = mediaEl(inp); if (m) { m.pause(); m.removeAttribute('src'); m.load(); }
   try { inp.a?.afvGain.disconnect(); } catch { }
   if (inp.type === 'web') NOVA?.webClose?.(inp._webId);
+  if (inp.type === 'vset') window.VSet?.dispose(inp);
   if (inp.type === 'delay') inp._dl.frames = [];
   S.inputs = S.inputs.filter(i => i !== inp);
   S.overlays.forEach(o => { if (o.inputId === id) { o.inputId = null; o.on = false; o.alpha = 0; } });
@@ -725,6 +765,7 @@ function drawContent(ctx, inp, alpha, rx, ry, rw, rh, tNow, fitOverride) {
     else if (inp.type === 'web') renderWeb(inp);
     else if (inp.type === 'delay') renderDelay(inp, tNow);
     else if (inp.type === 'draw') renderDraw(inp);
+    else if (inp.type === 'vset') renderVSet(inp, tNow);
     inp._rt = tNow;
   }
   let [sw, sh] = srcSize(inp);
@@ -819,6 +860,57 @@ function renderProgram(t) {
   const fs = 1000 / S.settings.fps / 500;
   S.ftb.alpha = S.ftb.on ? Math.min(1, S.ftb.alpha + fs) : Math.max(0, S.ftb.alpha - fs);
   if (S.ftb.alpha > 0) { pctx.globalAlpha = S.ftb.alpha; pctx.fillStyle = '#000'; pctx.fillRect(0, 0, W, H); pctx.globalAlpha = 1; }
+  if (LIC.watermark) drawTrialMark(pctx);
+}
+
+// ---------- Lisans ----------
+const LIC = { st: null, watermark: false };
+function drawTrialMark(x) {
+  const s = H / 1080; x.save(); x.globalAlpha = 0.72; x.font = `800 ${Math.round(26 * s)}px Segoe UI, Arial`;
+  const txt = 'NOVA Canlı • DENEME SÜRÜMÜ', w = x.measureText(txt).width + 36 * s;
+  x.fillStyle = 'rgba(0,0,0,0.55)'; x.beginPath(); x.roundRect(W - w - 24 * s, 24 * s, w, 44 * s, 8 * s); x.fill();
+  x.fillStyle = '#fff'; x.textAlign = 'right'; x.textBaseline = 'middle'; x.fillText(txt, W - 42 * s, 46 * s); x.restore();
+}
+async function refreshLicense() {
+  if (!NOVA?.licStatus) { LIC.st = { state: 'web' }; return LIC.st; }
+  const st = LIC.st = await NOVA.licStatus();
+  LIC.watermark = st.state !== 'licensed';
+  const b = $('#lic-badge'); if (b) {
+    b.hidden = false; b.className = 'lic-badge ' + st.state;
+    b.textContent = st.state === 'licensed' ? (st.plan || 'PRO').toUpperCase() + ' LİSANS' : st.state === 'trial' ? `DENEME: ${st.daysLeft} GÜN` : st.state === 'expired' ? 'LİSANS SÜRESİ DOLDU' : 'DENEME BİTTİ';
+  }
+  return st;
+}
+const PLAN_NAMES = { pro: 'Pro', studio: 'Stüdyo', kurumsal: 'Kurumsal', egitim: 'Eğitim' };
+function openLicense() {
+  const st = LIC.st || { state: 'web' };
+  const body = document.createElement('div'); body.className = 'lic';
+  const head = st.state === 'licensed'
+    ? `<div class="lic-state ok"><b>✔ Lisanslı</b><span>${esc(st.name || '')}${st.email ? ' • ' + esc(st.email) : ''}</span><span>Paket: ${esc(PLAN_NAMES[st.plan] || st.plan)} • ${st.expires ? 'Bitiş: ' + esc(st.expires) : 'Süresiz'} ${st.id ? '• No: ' + esc(st.id) : ''}</span></div>`
+    : st.state === 'trial' ? `<div class="lic-state trial"><b>Deneme sürümü — ${st.daysLeft} gün kaldı</b><span>Tüm özellikler açık; yayın ve kayıtta köşede "DENEME SÜRÜMÜ" yazısı görünür.</span></div>`
+    : st.state === 'web' ? `<div class="lic-state trial"><b>Tarayıcı modu</b><span>Lisans yalnızca masaüstü uygulamasında etkinleştirilir.</span></div>`
+    : `<div class="lic-state bad"><b>${st.state === 'expired' ? 'Lisans süresi doldu' : 'Deneme süresi doldu'}</b><span>${esc(st.error || 'Yayın ve kayıt için lisans anahtarı girin. Önizleme ve hazırlık çalışmaya devam eder.')}</span></div>`;
+  body.innerHTML = `${head}
+    <label class="lic-l">Bilgisayar kodunuz</label>
+    <div class="row"><input class="mono lic-mid" readonly value="${esc(st.machine || '—')}"><button class="lic-copy">Kopyala</button></div>
+    <p class="note">Lisans almak için bu kodu satıcıya gönderin; size bu bilgisayara özel bir anahtar verilir.</p>
+    <label class="lic-l">Lisans anahtarı</label>
+    <textarea class="mono lic-key" rows="4" placeholder="NV1.xxxxxxxx…"></textarea>
+    <div class="lic-msg"></div>`;
+  const foot = [['Kapat', () => { }]];
+  if (st.state === 'licensed') foot.unshift(['Lisansı kaldır', () => { confirmBox('Bu bilgisayardaki lisans kaldırılsın mı?', async () => { await NOVA.licRemove(); await refreshLicense(); toast('Lisans kaldırıldı.'); }); return false; }]);
+  foot.push(['Etkinleştir', () => {
+    const key = $('.lic-key', body).value.trim(), m = $('.lic-msg', body);
+    if (!NOVA?.licActivate) { m.textContent = 'Masaüstü uygulamasında etkinleştirin.'; return false; }
+    if (!key) { m.textContent = 'Anahtarı yapıştırın.'; return false; }
+    NOVA.licActivate(key).then(async r => {
+      if (!r.ok) { m.className = 'lic-msg bad'; m.textContent = r.error; return; }
+      await refreshLicense(); closeModal(); toast('Lisans etkinleştirildi. İyi yayınlar!');
+    });
+    return false;
+  }, true]);
+  modal('Lisans', body, foot);
+  $('.lic-copy', body).onclick = () => { navigator.clipboard?.writeText(st.machine || ''); toast('Bilgisayar kodu kopyalandı.'); };
 }
 
 let frame = 0, fpsCount = 0, fpsT = performance.now(), renderMs = 0, lastTick = performance.now();
@@ -1009,6 +1101,7 @@ function renderInputs() {
         ${inp.list && inp.list.length > 1 ? `<button data-b="next" title="Listede sonraki">⏭</button>` : ''}
         ${inp.type === 'photos' ? `<button data-b="pprev" title="Önceki fotoğraf">⏮</button><button data-b="pnext" title="Sonraki fotoğraf">⏭</button>` : ''}
         ${inp.type === 'web' ? `<button data-b="wreload" title="Sayfayı yenile">⟳</button>` : ''}
+        ${inp.type === 'vset' ? `<button data-b="vshot" title="Kamera açısını değiştir">🎥</button>` : ''}
         ${inp.type === 'draw' ? `<button data-b="dboard" title="Çizim tahtası">✎</button><button data-b="dclear" title="Çizimi temizle">🧹</button>` : ''}
         ${inp.triggers?.length ? `<button data-b="trg" class="trg" title="${inp.triggers.length} tetikleyici">⚡</button>` : ''}
         ${titleHasList(inp) ? `<button data-b="tprev" title="Önceki isim / satır">⏮</button><button data-b="tnext" title="Sonraki isim / satır (N)">⏭</button>` : ''}
@@ -1033,6 +1126,7 @@ function renderInputs() {
       else if (b === 'pnext') photosNext(inp, 1);
       else if (b === 'wreload') NOVA?.webReload ? NOVA.webReload(inp._webId) : toast('Web kaynağı masaüstü uygulamasında çalışır.', true);
       else if (b === 'dboard') openInputSettings(inp.id, 'cizim');
+      else if (b === 'vshot') vsetShot(inp);
       else if (b === 'dclear') { inp.draw.strokes.length = 0; toast('Çizim temizlendi.'); }
       else if (b === 'pprev') photosNext(inp, -1);
       else if (b === 'trg') openInputSettings(inp.id, 'trig');
@@ -1076,7 +1170,7 @@ function markInputs() {
   });
   renderOverlays();
 }
-const HEAVY = new Set(['title', 'studio', 'scene', 'photos', 'draw']);
+const HEAVY = new Set(['title', 'studio', 'scene', 'photos', 'draw', 'vset']);
 let thumbTick = 0;
 function drawThumbs(t) {
   thumbTick++;
@@ -1233,7 +1327,7 @@ async function startOutput(kind) {
       ? { targets: st.targets, encoder: st.encoder, preset: st.preset, vbitrate: st.vbitrate, abitrate: st.abitrate, fps: st.fps }
       : { mode: st.recMode, inputCodec: codec, format: st.format, encoder: st.encoder, preset: st.preset, recbitrate: st.recbitrate, abitrate: st.abitrate, fps: st.fps, folder };
     const r = await NOVA.outputStart(kind, cfg);
-    if (!r.ok) { ms.getVideoTracks().forEach(t => t.stop()); toast(r.error, true); return; }
+    if (!r.ok) { ms.getVideoTracks().forEach(t => t.stop()); toast(r.error, true); if (r.license) { refreshLicense().then(openLicense); } return; }
     o.file = r.file;
     rec.ondataavailable = (e) => {
       if (!e.data.size) return;
@@ -1487,6 +1581,7 @@ function openInputSettings(id, tab) {
   if (inp.type === 'web') tabs.push(['web', 'Web Sayfası']);
   if (inp.type === 'delay') tabs.push(['gecikme', 'Gecikme']);
   if (inp.type === 'draw') tabs.push(['cizim', 'Çizim Tahtası']);
+  if (inp.type === 'vset') tabs.push(['vset', '3D Stüdyo']);
   if (hasVideo(inp)) tabs.push(['konum', 'Konum / Kırp'], ['renk', 'Renk']);
   if (['camera', 'video', 'screen', 'image'].includes(inp.type)) tabs.push(['chroma', 'Yeşil Perde']);
   tabs.push(['trig', `Tetikleyiciler${inp.triggers?.length ? ' (' + inp.triggers.length + ')' : ''}`]);
@@ -1631,6 +1726,8 @@ function openInputSettings(id, tab) {
       rl.onclick = () => NOVA?.webReload?.(inp._webId);
     } else if (cur === 'gecikme') {
       buildDelayConfig(g, inp.delay, inp.id, () => { inp._dl.frames = []; inp._dl.shown = -1; const s = byId(inp.delay.src); if (s) { inp.name = `${s.name} (+${(inp.delay.ms / 1000).toFixed(1)} sn)`; renderInputs(); } });
+    } else if (cur === 'vset') {
+      buildVSetConfig(g, inp.vset, inp.id, () => { const st = window.VSet?.STYLES[inp.vset.style]; if (st) inp.name = '3D: ' + st.name; renderInputs(); }, () => draw());
     } else if (cur === 'cizim') {
       buildDrawBoard(g, inp);
     } else if (cur === 'foto') {
@@ -1670,6 +1767,7 @@ function openInputSettings(id, tab) {
           <select class="act">${Object.entries(TRIG_ACTIONS).map(([a, nm]) => `<option value="${a}" ${tr.act === a ? 'selected' : ''}>${nm}</option>`).join('')}</select>
           ${needsTgt(tr.act) ? `<select class="tgt">${tgtOpts.map(([v, nm]) => `<option value="${v}" ${String(tr.target ?? '') === v ? 'selected' : ''}>${esc(nm)}</option>`).join('')}</select>` : ''}
           ${/^ov/.test(tr.act) || tr.act === 'stinger' ? `<select class="n">${[0, 1, 2, 3, 4, 5, 6, 7].map(i => `<option value="${i}" ${(+tr.n || 0) === i ? 'selected' : ''}>${tr.act === 'stinger' ? 'Stinger' : 'Overlay'} ${i + 1}</option>`).join('')}</select>` : ''}
+          ${tr.act === 'vshot' ? `<select class="n">${Object.values(window.VSet?.SHOTS || {}).map((sh, i) => `<option value="${i}" ${(+tr.n || 0) === i ? 'selected' : ''}>${sh.name}</option>`).join('')}</select>` : ''}
           <button class="del" title="Sil">✕</button>`;
         r.onchange = (e) => {
           const c = e.target.classList;
@@ -1921,6 +2019,7 @@ function serialize() {
       audio: { vol: i.audio.vol, muted: i.audio.muted, afv: i.audio.afv, comp: i.audio.comp, bus: i.audio.bus }, loop: i.loop, autoPlay: i.autoPlay, title: i.title,
       list: i.list?.filter(x => x.path || isNet(x.url)).map(x => ({ path: x.path, url: x.path ? undefined : x.url, name: x.name })), rp: i.rp ? { speed: i.rp.speed, secs: i.rp.secs, quad: i.rp.quad, group: i.rp.group, angle: i.rp.angle, inT: i.rp.inT, outT: i.rp.outT, autoReturn: i.rp.autoReturn, angles: i.rp.angles.map(a => a === 'pgm' || a == null ? a : S.inputs.findIndex(x => x.id === a)) } : undefined,
       studio: i.studio, go: i.go, color: i.color, web: i.web, draw: i.draw,
+      vset: i.vset ? { ...i.vset, talent: S.inputs.findIndex(x => x.id === i.vset.talent), screen: S.inputs.findIndex(x => x.id === i.vset.screen) } : undefined,
       delay: i.delay ? { ms: i.delay.ms, src: S.inputs.findIndex(x => x.id === i.delay.src) } : undefined,
       photos: i.photos ? { ...i.photos, list: i.photos.list.filter(x => x.path) } : undefined,
       triggers: i.triggers?.map(t => ({ ...t, target: t.target == null ? null : S.inputs.findIndex(x => x.id === t.target) })),
@@ -1957,6 +2056,7 @@ async function openProject() {
       else if (d.type === 'web') inp = addWeb(d.web);
       else if (d.type === 'delay') { inp = addDelay(null, d.delay?.ms); inp._delaySrc = d.delay?.src; }
       else if (d.type === 'draw') inp = addDraw(d.draw);
+      else if (d.type === 'vset') { inp = addVSet(d.vset?.style, { ...d.vset, talent: null, screen: null }); inp._vsRef = d.vset; }
       else if (d.type === 'replay') { inp = addReplay(); const { angles, ...rest } = d.rp || {}; Object.assign(inp.rp, rest); inp._rpAngles = angles; }
       else if (d.type === 'image' && d.src.path) inp = addImage({ path: d.src.path });
       else if (d.type === 'audio' && d.src.path) inp = addAudioFile({ path: d.src.path });
@@ -1974,6 +2074,7 @@ async function openProject() {
     }
     made.push(inp);
   }
+  made.forEach(inp => { if (inp?._vsRef) { inp.vset.talent = made[inp._vsRef.talent]?.id ?? null; inp.vset.screen = made[inp._vsRef.screen]?.id ?? null; delete inp._vsRef; } });
   made.forEach(inp => { if (inp && inp._delaySrc != null) { inp.delay.src = made[inp._delaySrc]?.id ?? null; delete inp._delaySrc; } });
   made.forEach(inp => { if (inp?._trg) { inp.triggers = inp._trg.map(t => ({ ...t, target: t.target == null || t.target < 0 ? null : made[t.target]?.id ?? null })); delete inp._trg; } });
   made.forEach(inp => { if (inp?._rpAngles) { while (inp._rpAngles.length < RP_N) inp._rpAngles.push(null); inp.rp.angles = inp._rpAngles.map(a => a === 'pgm' || a == null ? a ?? null : made[a]?.id ?? null); delete inp._rpAngles; } });
@@ -2011,18 +2112,20 @@ const ACTIONS = {
   cut, auto: () => transition(), ftb: () => { S.ftb.on = !S.ftb.on; $('#btn-ftb').classList.toggle('on', S.ftb.on); },
   record: toggleRecord, stream: toggleStream, snapshot, external: openExternal,
   settings: () => openSettings('stream'), save: () => saveProject(false), open: openProject,
+  license: () => refreshLicense().then(openLicense),
   new: () => confirmBox('Tüm kaynaklar kaldırılıp yeni proje başlatılsın mı?', clearAll),
   about: async () => {
     const ver = NOVA?.appVersion ? await NOVA.appVersion() : APP_VERSION;
     const b = modal('Hakkında', `<div style="text-align:center;padding:10px 0 4px">
       <img src="img/icon.png" width="84" height="84" style="border-radius:18px"><h2 style="margin:10px 0 2px">NOVA Canlı</h2>
       <div style="color:var(--dim)">Sürüm ${esc(ver)}</div>
-      <p>vMix tarzı ücretsiz canlı yayın ve prodüksiyon programı.</p>
+      <p>vMix tarzı profesyonel canlı yayın ve prodüksiyon programı.</p><p id="about-lic" class="note"></p>
       <p><b>Geliştirici:</b> Samet Şahin — @xsametsahinx</p>
       <p><a href="#" id="gh-link" style="color:var(--accent)">${GITHUB_URL.replace('https://', '')}</a></p>
       <div style="display:flex;gap:8px;justify-content:center;align-items:center;margin-top:12px">
         <button id="upd-check" class="primary">Güncellemeleri denetle</button><button id="upd-install" style="display:none">Yeniden başlat ve güncelle</button></div>
       <p class="note" id="upd-msg">${esc(updText())}</p></div>`);
+    const L = LIC.st; if (L) $('#about-lic').textContent = L.state === 'licensed' ? `Lisans sahibi: ${L.name || '—'} (${PLAN_NAMES[L.plan] || L.plan})` : L.state === 'trial' ? `Deneme sürümü: ${L.daysLeft} gün kaldı` : L.state === 'web' ? '' : 'Lisans gerekli';
     $('#gh-link', b).onclick = (e) => { e.preventDefault(); NOVA?.openUrl ? NOVA.openUrl(GITHUB_URL) : window.open(GITHUB_URL); };
     $('#upd-check', b).onclick = () => checkUpdates(true);
     $('#upd-install', b).onclick = () => installUpdate();
@@ -2133,5 +2236,8 @@ if (NOVA?.onUpdateStatus) NOVA.onUpdateStatus((st, d) => {
   $('.credit').textContent = `NOVA Canlı v${APP_VERSION} • Samet Şahin (@xsametsahinx)`;
   if (S.settings.autoUpdate !== false) { setTimeout(() => checkUpdates(false), 6000); setInterval(() => { if (S.settings.autoUpdate !== false && UPD.st !== 'ready') checkUpdates(false); }, 3 * 3600 * 1000); }
   toast('NOVA Canlı hazır. "+ Kaynak Ekle" ile başla.');
-  window.__nova = { addWeb, addDelay, addDraw, replayExport, replayGoLive, openInputSelect: (...a) => openInputSelect(...a), addPhotos, stingerTo, runTrigger, fireTriggers, replayToggleQuad, replaySetAngle, replayPlay, goAction, BUS, addStudio, addScene, applyScenePreset, titleNext, pickTitle, pickStudio, pickScene, openInputSettings, addReplay, replayMark, replayHotkey, RP, S, cut, transition, toggleOverlay, startOutput, stopOutput, addTitle, addColor, addVideo, addImage, outState, prog }; // test erişimi
+  window.__nova = { refreshLicense, openLicense, LIC, addVSet, vsetShot, addWeb, addDelay, addDraw, replayExport, replayGoLive, openInputSelect: (...a) => openInputSelect(...a), addPhotos, stingerTo, runTrigger, fireTriggers, replayToggleQuad, replaySetAngle, replayPlay, goAction, BUS, addStudio, addScene, applyScenePreset, titleNext, pickTitle, pickStudio, pickScene, openInputSettings, addReplay, replayMark, replayHotkey, RP, S, cut, transition, toggleOverlay, startOutput, stopOutput, addTitle, addColor, addVideo, addImage, outState, prog }; // test erişimi
 })();
+
+// Açılışta lisans durumu
+refreshLicense().then(st => { if (st && (st.state === 'trial-over' || st.state === 'expired')) setTimeout(openLicense, 600); }).catch(() => { });

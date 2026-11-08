@@ -2,6 +2,9 @@ const { contextBridge, ipcRenderer, webUtils } = require('electron');
 
 contextBridge.exposeInMainWorld('nova', {
   isDesktop: true,
+  licStatus: () => ipcRenderer.invoke('lic-status'),
+  licActivate: (key) => ipcRenderer.invoke('lic-activate', key),
+  licRemove: () => ipcRenderer.invoke('lic-remove'),
   getSources: () => ipcRenderer.invoke('get-sources'),
   getDisplays: () => ipcRenderer.invoke('get-displays'),
   openFiles: (kind) => ipcRenderer.invoke('open-files', kind),

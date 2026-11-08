@@ -257,3 +257,25 @@ optgroup { color: var(--dim); font-style: normal; }
 
 .isel-wrap { flex: 1; min-height: 0; display: flex; flex-direction: column; }
 .isel { min-height: 0; }
+
+/* 3D stüdyo */
+.vs-shots { display: flex; flex-wrap: wrap; gap: 6px; flex: 1; }
+.vs-shots button { padding: 5px 10px; font-size: 12px; }
+.vs-shots button.on { background: var(--accent, #ff2d4b); color: #fff; border-color: transparent; }
+
+/* Lisans */
+.lic-badge { font: 700 11px/1 inherit; padding: 5px 9px; border-radius: 6px; border: 1px solid transparent; cursor: pointer; letter-spacing: .4px; }
+.lic-badge.licensed { background: rgba(25,195,125,.15); color: #19c37d; border-color: rgba(25,195,125,.35); }
+.lic-badge.trial { background: rgba(255,176,32,.15); color: #ffb020; border-color: rgba(255,176,32,.35); }
+.lic-badge.trial-over, .lic-badge.expired { background: rgba(255,45,75,.18); color: #ff5a73; border-color: rgba(255,45,75,.4); }
+.lic { display: flex; flex-direction: column; gap: 8px; min-width: 460px; }
+.lic .row { display: flex; gap: 8px; }
+.lic .lic-mid { flex: 1; font-size: 17px; letter-spacing: 2px; text-align: center; }
+.lic textarea { width: 100%; box-sizing: border-box; font-size: 12px; word-break: break-all; }
+.lic-l { font-weight: 600; color: var(--dim); font-size: 12px; margin-top: 4px; }
+.lic-state { display: flex; flex-direction: column; gap: 3px; padding: 12px 14px; border-radius: 10px; border: 1px solid; }
+.lic-state span { color: var(--dim); font-size: 12.5px; }
+.lic-state.ok { border-color: rgba(25,195,125,.4); background: rgba(25,195,125,.08); } .lic-state.ok b { color: #19c37d; }
+.lic-state.trial { border-color: rgba(255,176,32,.4); background: rgba(255,176,32,.08); } .lic-state.trial b { color: #ffb020; }
+.lic-state.bad { border-color: rgba(255,45,75,.45); background: rgba(255,45,75,.08); } .lic-state.bad b { color: #ff5a73; }
+.lic-msg { min-height: 18px; font-size: 12.5px; } .lic-msg.bad { color: #ff5a73; }

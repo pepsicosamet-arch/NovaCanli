@@ -238,6 +238,11 @@ function wireUpdater() {
   autoUpdater.on('error', (err) => send('error', { message: String((err && err.message) || err).split('\n')[0] }));
 }
 ipcMain.handle('app-version', () => app.getVersion());
+// ---------- Lisans ----------
+const lic = require('./license');
+ipcMain.handle('lic-status', () => lic.status(app));
+ipcMain.handle('lic-activate', (e, key) => lic.activate(app, key));
+ipcMain.handle('lic-remove', () => lic.remove(app));
 ipcMain.handle('update-check', async () => {
   if (!autoUpdater) return { ok: false, reason: 'Güncelleyici bu kurulumda yok.' };
   if (!app.isPackaged) return { ok: false, reason: 'Geliştirme modunda güncelleme denetlenmez.' };
@@ -269,6 +274,7 @@ function settingsFile() { return path.join(app.getPath('userData'), 'ayarlar.jso
 // RTMP'ye (yayın) veya MP4/MKV dosyasına (kayıt) çevirir.
 ipcMain.handle('output-start', (e, kind, cfg) => {
   if (outputs[kind]) return { ok: false, error: 'Zaten çalışıyor' };
+  if (!lic.canOutput(app)) return { ok: false, license: true, error: 'Deneme süresi doldu. Yayın ve kayıt için lisans etkinleştirin (Lisans menüsü).' };
   let args, file = null;
   if (kind === 'stream') {
     args = ffArgs.streamArgs(cfg);

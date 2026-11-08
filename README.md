@@ -1,6 +1,6 @@
 # NOVA Canlı
 
-**vMix tarzı, ücretsiz canlı yayın ve prodüksiyon programı (Windows).**
+**vMix tarzı, profesyonel canlı yayın ve prodüksiyon programı (Windows).**
 Kamera, ekran, oyun, video ve grafikleri karıştır; YouTube, Twitch, Kick, Facebook ve TikTok'a aynı anda yayın yap.
 
 Geliştirici: **Samet Şahin (@xsametsahinx)**
@@ -23,6 +23,7 @@ Geliştirici: **Samet Şahin (@xsametsahinx)**
 
 | Bölüm | Neler var |
 |---|---|
+| 3D Haber Stüdyoları (6) | Gerçek zamanlı 3D: Haber Merkezi, Gece Haberleri, Sabah Kuşağı, Ekonomi/Borsa, Spor Masası, Özel Yayın. LED video duvarı (kendi videonu da gösterebilirsin), ışıklı masa, yansımalı zemin, bloom; **7 kamera açısı** arası yumuşak hareket; yeşil perdeli sunucu masanın arkasına yerleşir. |
 | Kaynak Seç penceresi | vMix tarzı: solda 18 kaynak türü, sağda ayarlar (kamera önizlemesi, çözünürlük/fps, ses aygıtı…), **Numara** ile sıraya ekleme, Ctrl+I. |
 | Kaynaklar | **Web tarayıcı**, **video gecikmesi**, **telestratör (çizim)**, ağ videosu (URL), Kamera / yakalama kartı, ekran / pencere / oyun yakalama (+ sistem sesi), video ve **oynatma listesi**, resim/logo, **fotoğraf slayt gösterisi**, renk & degrade arka plan, mikrofon, müzik dosyası, **anlık tekrar**. Sürükle-bırak ile ekleme. |
 | Önizleme / Program | vMix tarzı iki monitör. KES, OTOMATİK, T-bar ile elle geçiş, 4 hızlı geçiş butonu, FTB (siyaha karart). |
@@ -43,6 +44,12 @@ Geliştirici: **Samet Şahin (@xsametsahinx)**
 | Kayıt | MP4 veya MKV, hızlı (kopyala) ya da yeniden kodlama modu; yayınla aynı anda kayıt. |
 | Otomatik güncelleme | Yeni sürüm GitHub'dan arka planda iner, program kapanınca kurulur (Ayarlar > Genel'den kapatılabilir). |
 | Diğer | 1080p / 720p / 1440p / dikey 9:16 (TikTok-Reels), 25/30/50/60 fps, harici çıkış penceresi (projeksiyon / 2. monitör), PNG fotoğraf, proje kaydet/aç (`.nova`). |
+
+## 🔑 Lisans
+
+NOVA Canlı lisanslı bir programdır. İlk kurulumda **7 gün deneme** başlar (tüm özellikler açık, yayın/kayıtta "DENEME SÜRÜMÜ" yazısı). Lisans için üst menüden **Lisans**'a tıkla, **bilgisayar kodunu** satıcıya gönder, aldığın `NV1.…` anahtarını yapıştırıp **Etkinleştir**'e bas. Anahtarlar Ed25519 ile imzalıdır ve bilgisayara bağlıdır; internet gerekmez.
+
+Lisans üretmek için: `araclar/NOVA-Lisans-Uretici.html` (yalnızca gizli imza anahtarı sahibinde çalışır).
 
 ## ⌨️ Kısayollar
 
